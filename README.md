@@ -1,6 +1,22 @@
+<p align="center">
+
 # 🚀 OpenVisionABU26
 
-![ROS2](https://img.shields.io/badge/ROS2-Jazzy-blue) ![C++](https://img.shields.io/badge/C++-17-blue) ![ONNX](https://img.shields.io/badge/ONNX-Runtime-yellow) ![Docker](https://img.shields.io/badge/Docker-Deployment-blue) ![GPU](https://img.shields.io/badge/GPU-Optional-green) ![Status](https://img.shields.io/badge/Status-Stable-success)
+</p>
+
+<p align="center">
+
+<img src="https://img.shields.io/badge/Ubuntu-24.04-E95420?logo=ubuntu&logoColor=white">
+<img src="https://img.shields.io/badge/ROS2-Jazzy-22314E?logo=ros&logoColor=white">
+<img src="https://img.shields.io/badge/C++-17-00599C?logo=cplusplus&logoColor=white">
+<img src="https://img.shields.io/badge/OpenCV-Computer%20Vision-5C3EE8?logo=opencv&logoColor=white">
+<img src="https://img.shields.io/badge/ONNX-Runtime-yellow?logo=onnx&logoColor=white">
+<img src="https://img.shields.io/badge/Ultralytics-YOLO-111111">
+<img src="https://img.shields.io/badge/Docker-Deployment-2496ED?logo=docker&logoColor=white">
+<img src="https://img.shields.io/badge/GPU-CUDA-76B900?logo=nvidia&logoColor=black">
+<img src="https://img.shields.io/badge/Status-Stable-success">
+
+</p>
 
 **OpenVisionABU26** is a real-time robotics perception system for **ABU Robocon 2026**.
 
@@ -310,22 +326,6 @@ Completed components:
 
 ---
 
-# 🧪 Demo (Optional)
-
-You can add a GIF here later.
-
-```
-docs/images/demo.gif
-```
-
-Example:
-
-```markdown
-![Demo](docs/images/demo.gif)
-```
-
----
-
 # 🧠 Design Philosophy
 
 > Keep the perception module focused, stable, and easy to integrate.
@@ -351,7 +351,7 @@ This project is intended for:
 
 ---
 
-# 👤 Maintainer
+# 🧪 Maintainer
 
 Project:
 
