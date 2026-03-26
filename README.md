@@ -37,7 +37,7 @@ Deployment readiness
 
 <!-- ![Tech Stack](docs/images/pipeline.png) -->
 <p align="center">
-  <img src="docs/images/pipeline.png" width="70%">
+  <img src="docs/images/pipeline.png" width="50%">
 </p>
 
 The perception pipeline follows a clear robotics workflow:
@@ -61,7 +61,7 @@ Robot Modules
 <!-- ![Tech Stack](docs/images/tech_stack.png) -->
 
 <p align="center">
-  <img src="docs/images/tech_stack.png" width="70%">
+  <img src="docs/images/tech_stack.png" width="50%">
 </p>
 
 Core technologies used in this system:
