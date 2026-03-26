@@ -3,7 +3,7 @@
 </h1>
 
 <p align="center">
-ROS2 Perception System for ABU Robocon 2026
+ROS2 Perception System for ABU Robocon 2026 | FPTU Robotics Team
 </p>
 
 <p align="center">
