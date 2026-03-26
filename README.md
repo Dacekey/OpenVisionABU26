@@ -225,10 +225,9 @@ OpenVisionABU26/
 │       └── package.xml
 │
 ├── docs/
-│   └── images/
-│       ├── pipeline.png
-│       ├── tech_stack.png
-│       └── architecture.png
+│   ├── images/
+│   │
+│   ├── Guide_Documents
 │
 ├── docker/
 ├── Dockerfile
