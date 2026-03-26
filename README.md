@@ -1,141 +1,73 @@
-# OpenVisionABU26
+# 🚀 OpenVisionABU26
 
-**OpenVisionABU26** is a real-time robotics perception system for **ABU Robocon 2026**.  
-It transforms a trained YOLO model into a deployable ROS 2 perception pipeline through a clear workflow:
+![ROS2](https://img.shields.io/badge/ROS2-Jazzy-blue) ![C++](https://img.shields.io/badge/C++-17-blue) ![ONNX](https://img.shields.io/badge/ONNX-Runtime-yellow) ![Docker](https://img.shields.io/badge/Docker-Deployment-blue) ![GPU](https://img.shields.io/badge/GPU-Optional-green) ![Status](https://img.shields.io/badge/Status-Stable-success)
 
-**Model → Inference Engine → ROS 2 Node → Detection Topics → Downstream Robot Modules**
+**OpenVisionABU26** is a real-time robotics perception system for **ABU Robocon 2026**.
 
-The project is designed as a **production-oriented perception baseline**: stable, modular, reproducible, and ready to integrate with planning, decision, and control systems.
+It transforms a trained YOLO model into a deployable ROS 2 perception pipeline:
+
+```
+Model → Inference Engine → ROS 2 Node → Detection Topics → Robot Modules
+```
 
 ---
 
-## Overview
+# 🧠 System Overview
 
 OpenVisionABU26 focuses on one core responsibility:
 
 - detect target symbols in real time
 - publish structured detection results
-- support downstream robot logic through ROS 2 interfaces
-- remain easy to launch, configure, and deploy
+- support downstream robot logic
+- enable stable deployment using Docker
 
-At this stage, the project emphasizes **system reliability and deployment readiness** over feature complexity.
+At this stage, the system emphasizes:
 
----
-
-## Workflow
-
-The system follows a practical robotics perception workflow:
-
-### 1. Model
-A YOLO model is trained and exported to **ONNX** format.
-
-### 2. Inference Engine
-A custom **C++ YOLO inference engine** is used to run the model with:
-
-- ONNX Runtime
-- OpenCV
-- CUDA support when available
-
-### 3. ROS 2 Integration
-The engine is wrapped into a **ROS 2 perception node** that subscribes to camera images, runs inference, and publishes structured outputs.
-
-### 4. System Outputs
-The node publishes:
-
-- annotated debug image for visualization
-- detection results for machine-to-machine integration
-
-### 5. Downstream Integration
-These outputs can be consumed by:
-
-- planning
-- decision
-- navigation
-- robot control
-- future perception layers such as grouping or tracking
-
----
-
-## System Pipeline
-
-```text
-Camera
-  ↓
-Image Topic
-  ↓
-YOLO Detection Node
-  ↓
-/yolo/detections
-  ↓
-Planning / Decision / Control
 ```
-
-Debug flow:
-
-```text
-Camera
-  ↓
-YOLO Detection Node
-  ↓
-/yolo/image_annotated
+Reliability
+Modularity
+Deployment readiness
 ```
 
 ---
 
-## Core Features
+# 🔄 System Workflow
 
-- Real-time symbol detection using YOLO
-- Custom C++ inference engine
-- ROS 2 Jazzy integration
-- Standardized detection publishing with `vision_msgs`
-- Configurable runtime parameters via YAML
-- One-command startup using launch files
-- Docker-based deployment workflow
-- Optional GPU acceleration
-- Modular architecture for future expansion
+## End-to-End Pipeline
 
----
+<!-- ![Tech Stack](docs/images/pipeline.png) -->
+<p align="center">
+  <img src="docs/images/pipeline.png" width="70%">
+</p>
 
-## Repository Structure
+The perception pipeline follows a clear robotics workflow:
 
-```text
-OpenVisionABU26/
-├── src/
-│   └── abu_yolo_ros/
-│       ├── include/
-│       ├── src/
-│       ├── models/
-│       ├── config/
-│       ├── launch/
-│       ├── CMakeLists.txt
-│       └── package.xml
-├── docs/
-├── docker/
-├── Dockerfile
-└── README.md
+```
+YOLO Model
+    ↓
+Inference Engine
+    ↓
+ROS 2 Node
+    ↓
+Detection Topics
+    ↓
+Robot Modules
 ```
 
 ---
 
-## Main ROS 2 Interfaces
+# ⚙️ Technology Stack
 
-### Input
-- `/image_raw`
+<!-- ![Tech Stack](docs/images/tech_stack.png) -->
 
-### Outputs
-- `/yolo/detections`
-- `/yolo/image_annotated`
+<p align="center">
+  <img src="docs/images/tech_stack.png" width="70%">
+</p>
 
-### Detection Message Type
-- `vision_msgs/msg/Detection2DArray`
+Core technologies used in this system:
 
-This keeps the perception layer easy to integrate with downstream ROS 2 systems without exposing internal engine details.
+## Software
 
----
-
-## Technology Stack
-
-### Software
 - Ubuntu 24.04
 - ROS 2 Jazzy
 - C++
@@ -143,20 +75,36 @@ This keeps the perception layer easy to integrate with downstream ROS 2 systems 
 - ONNX Runtime
 - Docker
 
-### Hardware
+## Hardware
+
 - USB camera or laptop camera
-- NVIDIA GPU recommended for accelerated inference
+- NVIDIA GPU (recommended)
 
 ---
 
-## Running Modes
+# ✨ Core Features
 
-OpenVisionABU26 can be used in two practical ways.
+- Real-time symbol detection using YOLO
+- Custom C++ inference engine
+- ROS 2 Jazzy integration
+- Structured detection publishing
+- YAML-based configuration
+- Launch file system
+- Docker deployment
+- Optional GPU acceleration
+- Modular system architecture
 
-### Local Development
+---
+
+# 📦 Deployment Modes
+
+OpenVisionABU26 supports two primary execution modes.
+
+---
+
+## 🧪 Local Development
+
 Best for rapid iteration and debugging.
-
-Typical workflow:
 
 ```bash
 cd ~/ros2_ws
@@ -165,20 +113,28 @@ source install/setup.bash
 ros2 launch abu_yolo_ros yolo.launch.py
 ```
 
-### Docker Deployment
-Best for reproducibility, portability, and sharing with other users.
+---
 
-Typical workflow:
+## 🐳 Docker Deployment
+
+Best for reproducibility and sharing.
 
 ```bash
 docker build -t openvision:latest .
+```
+
+Run container:
+
+```bash
 docker run -it --rm \
   --device=/dev/video0 \
   --network host \
   openvision:latest bash
 ```
 
-Optional GPU mode:
+---
+
+## ⚡ Optional GPU Mode
 
 ```bash
 docker run -it --rm \
@@ -190,14 +146,16 @@ docker run -it --rm \
 
 ---
 
-## Quick Start
+# 🚀 Quick Start
 
-### Build
+## Build
+
 ```bash
 docker build -t openvision:latest .
 ```
 
-### Run
+## Run
+
 ```bash
 docker run -it --rm \
   --device=/dev/video0 \
@@ -205,7 +163,8 @@ docker run -it --rm \
   openvision:latest bash
 ```
 
-### Inside Container
+Inside container:
+
 ```bash
 source /opt/ros/jazzy/setup.bash
 source /workspace/install/setup.bash
@@ -214,9 +173,9 @@ ros2 launch abu_yolo_ros yolo.launch.py
 
 ---
 
-## Verification
+# 🔍 Verification
 
-Basic checks after launch:
+After launching the system:
 
 ```bash
 ros2 topic list
@@ -224,113 +183,195 @@ ros2 topic echo /yolo/detections
 ros2 topic hz /image_raw
 ```
 
-Expected high-level behavior:
+Expected behavior:
 
 - camera topic is active
 - YOLO node launches successfully
 - detections are published
-- annotated image is available
-- system remains stable during runtime
+- system runs stably
 
 ---
 
-## Notes for Developers
+# 🗂 Repository Structure
 
-The default configuration may need to be adjusted depending on the runtime environment.
-
-For example:
-
-- Docker paths typically use `/workspace/...`
-- local ROS 2 workspace paths may use `/home/<user>/ros2_ws/...`
-
-If running directly in a local workspace, update model paths in the YAML configuration accordingly.
+```
+OpenVisionABU26/
+├── src/
+│   └── abu_yolo_ros/
+│       ├── include/
+│       ├── src/
+│       ├── models/
+│       ├── config/
+│       ├── launch/
+│       ├── CMakeLists.txt
+│       └── package.xml
+│
+├── docs/
+│   └── images/
+│       ├── pipeline.png
+│       ├── tech_stack.png
+│       └── architecture.png
+│
+├── docker/
+├── Dockerfile
+└── README.md
+```
 
 ---
 
-## Current Status
+# 🧩 System Interfaces
 
-**OpenVisionABU26** currently represents a stable **Perception System v1 baseline**.
+## Input
 
-Completed:
+```
+/image_raw
+```
 
-- custom YOLO inference engine
-- ROS 2 perception node
-- detection topic publishing
-- YAML configuration
+## Outputs
+
+```
+/yolo/detections
+/yolo/image_annotated
+```
+
+## Message Type
+
+```
+vision_msgs/msg/Detection2DArray
+```
+
+---
+
+# ⚠️ Notes for Developers
+
+Paths may differ depending on runtime environment.
+
+Example:
+
+```
+Docker:
+    /workspace/...
+
+Local:
+    /home/<user>/ros2_ws/...
+```
+
+If running locally, update model paths in:
+
+```
+config.yaml
+```
+
+---
+
+# 📊 Current Status
+
+OpenVisionABU26 represents:
+
+```
+Perception System v1
+Stable baseline
+Deployment-ready
+```
+
+Completed components:
+
+- YOLO inference engine
+- ROS 2 node
+- detection publishing
 - launch system
-- Dockerized runtime
-- CPU and Docker validation
-- GPU-enabled Docker host setup workflow
-
-This baseline is already suitable for:
-
-- internal team sharing
-- technical demos
-- deployment experiments
-- downstream robotics integration
+- Docker deployment
+- GPU runtime support
 
 ---
 
-## Roadmap
+# 🗺 Roadmap
 
-Short-term:
+## Short-term
+
 - deployment polish
-- performance benchmarking across hardware
-- runtime monitoring improvements
+- performance benchmarking
+- runtime monitoring
 - documentation refinement
 
-Mid-term:
-- robot-side deployment
-- optimization for edge hardware
-- stronger production validation
+## Mid-term
 
-Future perception extensions:
+- robot-side deployment
+- edge hardware optimization
+- production validation
+
+## Future Extensions
+
 - object grouping
 - tracking
-- KFS-level interpretation
 - segmentation
 - distance estimation
+- multi-object reasoning
 
 ---
 
-## Design Philosophy
+# 🧪 Demo (Optional)
 
-OpenVisionABU26 is built with a simple principle:
+You can add a GIF here later.
 
-> **Keep the perception module focused, stable, and easy to integrate.**
+```
+docs/images/demo.gif
+```
 
-Rather than solving every robotics task inside one node, the project aims to provide a clean perception output layer that other modules can build upon.
+Example:
+
+```markdown
+![Demo](docs/images/demo.gif)
+```
 
 ---
 
-## Intended Use
+# 🧠 Design Philosophy
+
+> Keep the perception module focused, stable, and easy to integrate.
+
+Rather than solving every robotics task inside one node, the system provides:
+
+```
+Clean perception output
+Stable runtime behavior
+Reusable interfaces
+```
+
+---
+
+# 🎯 Intended Use
 
 This project is intended for:
 
-- ABU Robocon 2026 development
-- robotics perception experiments
-- ROS 2 integration workflows
+- ABU Robocon 2026
+- robotics perception systems
+- ROS 2 development
 - deployable computer vision pipelines
 
 ---
 
-## License
+# 👤 Maintainer
 
-This project is intended primarily for educational, research, and robotics competition purposes.
+Project:
+
+```
+OpenVisionABU26
+```
+
+Domain:
+
+```
+Robotics Perception
+Computer Vision
+ROS 2 Systems
+```
 
 ---
 
-## Maintainer
+# 📌 Version
 
-**Project:** OpenVisionABU26  
-**Context:** ABU Robocon 2026  
-**Domain:** Robotics Perception / Vision Engineering
-
----
-
-## Version
-
-```text
+```
 Version: v1.0
 Status: Stable perception baseline
 Deployment readiness: Verified
