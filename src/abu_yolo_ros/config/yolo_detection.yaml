@@ -1,0 +1,30 @@
+yolo_detection_node:
+
+  ros__parameters:
+
+    model_path:
+      /workspace/src/abu_yolo_ros/models/fptu_abu26_detect_yolo_v1.onnx
+
+    class_names_path:
+      /workspace/src/abu_yolo_ros/models/fptu_abu26_detect.names
+
+    input_topic:
+      /image_raw
+
+    output_topic:
+      /yolo/image_annotated
+
+    detection_topic:
+      /yolo/detections
+
+    use_gpu: true
+
+    conf_threshold: 0.25
+
+    skip_frames: 0
+
+    log_timing: false
+
+    publish_debug_image: true
+
+    publish_detections: true
