@@ -1,7 +1,9 @@
+<h1 align="center">
+🚀 OpenVisionABU26
+</h1>
+
 <p align="center">
-
-# 🚀 OpenVisionABU26
-
+ROS2 Perception System for ABU Robocon 2026
 </p>
 
 <p align="center">
