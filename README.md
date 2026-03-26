@@ -227,7 +227,7 @@ OpenVisionABU26/
 ├── docs/
 │   ├── images/
 │   │
-│   ├── Guide_Documents
+│   └── Guide_Documents
 │
 ├── docker/
 ├── Dockerfile
