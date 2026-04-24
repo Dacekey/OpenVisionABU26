@@ -45,6 +45,24 @@ yolo_detection_node:
     confidence_scale: 3.0
     min_match_confidence: 0.30
 
+    # DecisionEngine thresholds
+    # confidence threshold for recognizing R1 KFS, which R2 should avoid.
+    r1_conf_threshold: 0.55
+    # minimum YOLO confidence for REAL KFS to be considered for collection.
+    real_conf_threshold: 0.60
+    # lower threshold because detecting FAKE early is safety-critical; if suspected as FAKE, avoid it.
+    fake_conf_threshold: 0.45
+    # final confidence threshold after combining YOLO confidence and color confidence.
+    collect_min_confidence: 0.60
+    # contribution of YOLO model confidence to final confidence.
+    yolo_confidence_weight: 0.60
+    # contribution of TeamColorFilter confidence to final confidence.
+    color_confidence_weight: 0.40
+    # REAL KFS can only be collected if it matches the configured team color.
+    require_team_color_match: true
+    # low-confidence detections become UNKNOWN instead of AVOID.
+    unknown_on_low_confidence: true
+
     publish_debug_image: true
 
     publish_detections: true

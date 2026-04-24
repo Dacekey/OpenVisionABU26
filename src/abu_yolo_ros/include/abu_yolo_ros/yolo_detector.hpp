@@ -24,6 +24,8 @@ public:
     cv::Mat drawDetections(const cv::Mat& image,
                            const std::vector<Detection>& detections) const;
 
+    std::string getClassLabel(int class_id) const;
+
     // giu tam de tuong thich code cu
     cv::Mat inferAndDraw(const cv::Mat& image) const;
 

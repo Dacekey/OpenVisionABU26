@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.8)
 project(abu_yolo_ros)
 
+include(CTest)
+
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
 endif()
@@ -75,6 +77,7 @@ add_executable(yolo_detection_node
   src/yolo_detection_node.cpp
   src/yolo_detector.cpp
   src/team_color_filter.cpp
+  src/decision_engine.cpp
 )
 
 ament_target_dependencies(
@@ -107,5 +110,19 @@ install(
     launch
   DESTINATION share/${PROJECT_NAME}
 )
+
+if(BUILD_TESTING)
+  add_executable(decision_engine_test
+    test/decision_engine_test.cpp
+    src/decision_engine.cpp
+  )
+
+  target_include_directories(decision_engine_test PRIVATE include)
+
+  add_test(
+    NAME decision_engine_test
+    COMMAND decision_engine_test
+  )
+endif()
 
 ament_package()

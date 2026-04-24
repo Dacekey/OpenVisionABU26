@@ -312,6 +312,15 @@ cv::Mat YOLODetector::drawDetections(
     return vis_image;
 }
 
+std::string YOLODetector::getClassLabel(int class_id) const {
+    if (class_id >= 0 &&
+        class_id < static_cast<int>(class_names_.size())) {
+        return class_names_[class_id];
+    }
+
+    return "unknown";
+}
+
 cv::Mat YOLODetector::inferAndDraw(const cv::Mat& image) const {
     auto detections = infer(image);
     return drawDetections(image, detections);

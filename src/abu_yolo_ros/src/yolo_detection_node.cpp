@@ -1,8 +1,10 @@
 #include <chrono>
+#include <cmath>
 #include <iomanip>
 #include <memory>
 #include <sstream>
 #include <string>
+#include <vector>
 
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/image.hpp"
@@ -10,6 +12,7 @@
 #include <opencv2/opencv.hpp>
 #include <cv_bridge/cv_bridge.hpp>
 
+#include "abu_yolo_ros/decision_engine.hpp"
 #include "abu_yolo_ros/team_color_filter.hpp"
 #include "abu_yolo_ros/yolo_detector.hpp"
 
@@ -55,6 +58,16 @@ public:
         this->declare_parameter<double>("confidence_scale", 3.0);
         this->declare_parameter<double>("min_match_confidence", 0.30);
 
+        // DecisionEngine parameters
+        this->declare_parameter<double>("r1_conf_threshold", 0.55);
+        this->declare_parameter<double>("real_conf_threshold", 0.60);
+        this->declare_parameter<double>("fake_conf_threshold", 0.45);
+        this->declare_parameter<double>("collect_min_confidence", 0.60);
+        this->declare_parameter<double>("yolo_confidence_weight", 0.60);
+        this->declare_parameter<double>("color_confidence_weight", 0.40);
+        this->declare_parameter<bool>("require_team_color_match", true);
+        this->declare_parameter<bool>("unknown_on_low_confidence", true);
+
         this->get_parameter("model_path", model_path_);
         this->get_parameter("class_names_path", class_names_path_);
         this->get_parameter("input_topic", input_topic_);
@@ -86,6 +99,31 @@ public:
         this->get_parameter("confidence_scale", tcf_config_.confidence_scale);
         this->get_parameter("min_match_confidence", tcf_config_.min_match_confidence);
 
+        this->get_parameter(
+            "r1_conf_threshold",
+            decision_config_.r1_conf_threshold);
+        this->get_parameter(
+            "real_conf_threshold",
+            decision_config_.real_conf_threshold);
+        this->get_parameter(
+            "fake_conf_threshold",
+            decision_config_.fake_conf_threshold);
+        this->get_parameter(
+            "collect_min_confidence",
+            decision_config_.collect_min_confidence);
+        this->get_parameter(
+            "yolo_confidence_weight",
+            decision_config_.yolo_confidence_weight);
+        this->get_parameter(
+            "color_confidence_weight",
+            decision_config_.color_confidence_weight);
+        this->get_parameter(
+            "require_team_color_match",
+            decision_config_.require_team_color_match);
+        this->get_parameter(
+            "unknown_on_low_confidence",
+            decision_config_.unknown_on_low_confidence);
+
         if (model_path_.empty())
             throw std::runtime_error("model_path is empty");
 
@@ -105,6 +143,18 @@ public:
             my_team_ = abu_yolo_ros::TeamColor::RED;
             team_color_string_ = "red";
         }
+
+        const double decision_weight_sum =
+            decision_config_.yolo_confidence_weight +
+            decision_config_.color_confidence_weight;
+        if (std::abs(decision_weight_sum - 1.0) > 1e-3) {
+            RCLCPP_WARN(
+                this->get_logger(),
+                "DecisionEngine weights sum to %.3f; normalizing for safe use",
+                decision_weight_sum);
+        }
+        decision_config_ =
+            abu_yolo_ros::normalizeDecisionConfig(decision_config_);
 
         RCLCPP_INFO(this->get_logger(), "Loading YOLO model...");
         RCLCPP_INFO(this->get_logger(), "Using GPU: %s",
@@ -128,6 +178,17 @@ public:
                         tcf_config_.min_coverage_ratio, tcf_config_.confidence_scale,
                         tcf_config_.min_match_confidence);
         }
+        RCLCPP_INFO(
+            this->get_logger(),
+            "DecisionEngine Config: r1=%.2f real=%.2f fake=%.2f collect=%.2f yolo_w=%.2f color_w=%.2f require_color=%s unknown_low_conf=%s",
+            decision_config_.r1_conf_threshold,
+            decision_config_.real_conf_threshold,
+            decision_config_.fake_conf_threshold,
+            decision_config_.collect_min_confidence,
+            decision_config_.yolo_confidence_weight,
+            decision_config_.color_confidence_weight,
+            decision_config_.require_team_color_match ? "true" : "false",
+            decision_config_.unknown_on_low_confidence ? "true" : "false");
 
         detector_ = std::make_unique<abu_yolo_ros::YOLODetector>(
             model_path_,
@@ -199,12 +260,19 @@ private:
 
             const auto team_color_results =
                 evaluateTeamColorResults(bgr, detections);
+            const auto decision_results =
+                evaluateDecisionResults(
+                    detections,
+                    team_color_results);
             maybeLogTeamColorResults(
                 detections,
                 team_color_results);
+            maybeLogDecisionResults(
+                decision_results);
             maybeLogDetectionDetails(
                 detections,
-                team_color_results);
+                team_color_results,
+                decision_results);
             
             publishDetections(detections);
 
@@ -436,7 +504,8 @@ private:
 
     void maybeLogDetectionDetails(
         const std::vector<abu_yolo_ros::Detection>& detections,
-        const std::vector<abu_yolo_ros::TeamColorResult>& team_color_results)
+        const std::vector<abu_yolo_ros::TeamColorResult>& team_color_results,
+        const std::vector<abu_yolo_ros::DecisionResult>& decision_results)
     {
         if (!debug_detections_) {
             return;
@@ -447,9 +516,12 @@ private:
 
         for (std::size_t i = 0; i < detections.size(); ++i) {
             const auto& detection = detections[i];
+            const std::string class_label =
+                detector_->getClassLabel(detection.class_id);
 
             stream << "\n  [" << i << "]"
                    << " class_id=" << detection.class_id
+                   << " class_name=" << class_label
                    << " conf=" << std::fixed << std::setprecision(2)
                    << detection.confidence
                    << " bbox(x=" << detection.x
@@ -473,6 +545,14 @@ private:
                        << " dominant=" << result.dominant_coverage
                        << " color_conf=" << result.confidence;
             }
+
+            if (i < decision_results.size()) {
+                const auto& result = decision_results[i];
+                stream << " decision="
+                       << abu_yolo_ros::decisionToString(result.decision)
+                       << " final_conf=" << result.final_confidence
+                       << " reason=\"" << result.reason << "\"";
+            }
         }
 
         RCLCPP_INFO_THROTTLE(
@@ -481,6 +561,82 @@ private:
             2000,
             "%s",
             stream.str().c_str());
+    }
+
+    std::vector<abu_yolo_ros::DecisionResult> evaluateDecisionResults(
+        const std::vector<abu_yolo_ros::Detection>& detections,
+        const std::vector<abu_yolo_ros::TeamColorResult>& team_color_results) const
+    {
+        std::vector<abu_yolo_ros::DecisionResult> results;
+        results.reserve(detections.size());
+
+        for (std::size_t i = 0; i < detections.size(); ++i) {
+            const abu_yolo_ros::TeamColorResult* color_result = nullptr;
+            const std::string class_name =
+                detector_->getClassLabel(detections[i].class_id);
+            if (enable_team_color_filter_ &&
+                i < team_color_results.size()) {
+                color_result = &team_color_results[i];
+            }
+
+            results.push_back(
+                abu_yolo_ros::classifyKFS(
+                    detections[i].class_id,
+                    class_name,
+                    detections[i].confidence,
+                    color_result,
+                    decision_config_));
+        }
+
+        return results;
+    }
+
+    void maybeLogDecisionResults(
+        const std::vector<abu_yolo_ros::DecisionResult>& decision_results)
+    {
+        std::size_t collect_count = 0;
+        std::size_t avoid_count = 0;
+        std::size_t unknown_count = 0;
+
+        std::ostringstream details;
+        bool has_details = false;
+
+        for (std::size_t i = 0; i < decision_results.size(); ++i) {
+            const auto& result = decision_results[i];
+
+            switch (result.decision) {
+            case abu_yolo_ros::KFSDecision::COLLECT:
+                ++collect_count;
+                break;
+            case abu_yolo_ros::KFSDecision::AVOID:
+                ++avoid_count;
+                break;
+            case abu_yolo_ros::KFSDecision::UNKNOWN:
+            default:
+                ++unknown_count;
+                break;
+            }
+
+            if (!has_details) {
+                details << "det[" << i << "]="
+                        << abu_yolo_ros::decisionToString(result.decision)
+                        << " final_conf=" << std::fixed << std::setprecision(2)
+                        << result.final_confidence
+                        << " reason=\"" << result.reason << "\"";
+                has_details = true;
+            }
+        }
+
+        RCLCPP_DEBUG_THROTTLE(
+            this->get_logger(),
+            *this->get_clock(),
+            2000,
+            "DecisionEngine det=%zu collect=%zu avoid=%zu unknown=%zu %s",
+            decision_results.size(),
+            collect_count,
+            avoid_count,
+            unknown_count,
+            has_details ? details.str().c_str() : "");
     }
 
 private:
@@ -513,6 +669,7 @@ private:
     std::string team_color_string_;
     abu_yolo_ros::TeamColor my_team_;
     abu_yolo_ros::TeamColorFilterConfig tcf_config_;
+    abu_yolo_ros::DecisionEngineConfig decision_config_;
 };
 
 int main(int argc, char** argv) {
