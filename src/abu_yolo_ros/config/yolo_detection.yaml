@@ -24,6 +24,8 @@ yolo_detection_node:
     skip_frames: 0
 
     log_timing: false
+    enable_team_color_filter: true
+    team_color: "red"
 
     publish_debug_image: true
 

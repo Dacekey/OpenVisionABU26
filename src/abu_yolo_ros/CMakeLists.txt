@@ -74,6 +74,7 @@ install(TARGETS
 add_executable(yolo_detection_node
   src/yolo_detection_node.cpp
   src/yolo_detector.cpp
+  src/team_color_filter.cpp
 )
 
 ament_target_dependencies(

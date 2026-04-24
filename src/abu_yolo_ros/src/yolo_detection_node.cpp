@@ -1,5 +1,7 @@
 #include <chrono>
+#include <iomanip>
 #include <memory>
+#include <sstream>
 #include <string>
 
 #include "rclcpp/rclcpp.hpp"
@@ -8,6 +10,7 @@
 #include <opencv2/opencv.hpp>
 #include <cv_bridge/cv_bridge.hpp>
 
+#include "abu_yolo_ros/team_color_filter.hpp"
 #include "abu_yolo_ros/yolo_detector.hpp"
 
 #include "vision_msgs/msg/detection2_d_array.hpp"
@@ -31,6 +34,8 @@ public:
         this->declare_parameter<bool>("visualize", true);
         this->declare_parameter<bool>("log_timing", false);
         this->declare_parameter<int>("skip_frames", 0);
+        this->declare_parameter<bool>("enable_team_color_filter", true);
+        this->declare_parameter<std::string>("team_color", "red");
 
         this->get_parameter("model_path", model_path_);
         this->get_parameter("class_names_path", class_names_path_);
@@ -40,6 +45,10 @@ public:
         this->get_parameter("visualize", visualize_);
         this->get_parameter("log_timing", log_timing_);
         this->get_parameter("skip_frames", skip_frames_);
+        this->get_parameter(
+            "enable_team_color_filter",
+            enable_team_color_filter_);
+        this->get_parameter("team_color", team_color_string_);
 
         if (model_path_.empty())
             throw std::runtime_error("model_path is empty");
@@ -50,9 +59,25 @@ public:
         if (skip_frames_ < 0)
             skip_frames_ = 0;
 
+        my_team_ =
+            abu_yolo_ros::parseTeamColor(team_color_string_);
+        if (my_team_ == abu_yolo_ros::TeamColor::UNKNOWN) {
+            RCLCPP_WARN(
+                this->get_logger(),
+                "Invalid team_color '%s'; defaulting to red",
+                team_color_string_.c_str());
+            my_team_ = abu_yolo_ros::TeamColor::RED;
+            team_color_string_ = "red";
+        }
+
         RCLCPP_INFO(this->get_logger(), "Loading YOLO model...");
         RCLCPP_INFO(this->get_logger(), "Using GPU: %s",
                     use_gpu_ ? "true" : "false");
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Team color filter: %s | team=%s",
+            enable_team_color_filter_ ? "enabled" : "disabled",
+            abu_yolo_ros::teamColorToString(my_team_).c_str());
 
         detector_ = std::make_unique<abu_yolo_ros::YOLODetector>(
             model_path_,
@@ -121,6 +146,8 @@ private:
             // Inference
             auto detections =
                 detector_->infer(bgr);
+
+            maybeLogTeamColorResults(bgr, detections);
             
             publishDetections(detections);
 
@@ -258,6 +285,74 @@ private:
         detection_pub_->publish(msg);
     }
 
+    void maybeLogTeamColorResults(
+        const cv::Mat& bgr,
+        const std::vector<abu_yolo_ros::Detection>& detections)
+    {
+        if (!enable_team_color_filter_) {
+            return;
+        }
+
+        std::size_t match_count = 0;
+        std::size_t red_count = 0;
+        std::size_t blue_count = 0;
+        std::size_t unknown_count = 0;
+
+        std::ostringstream details;
+        bool has_details = false;
+
+        for (std::size_t i = 0; i < detections.size(); ++i) {
+            const auto result =
+                abu_yolo_ros::filterByTeamColor(
+                    bgr,
+                    detections[i],
+                    my_team_);
+
+            if (result.matches_team) {
+                ++match_count;
+            }
+
+            switch (result.detected_team) {
+            case abu_yolo_ros::TeamColor::RED:
+                ++red_count;
+                break;
+            case abu_yolo_ros::TeamColor::BLUE:
+                ++blue_count;
+                break;
+            case abu_yolo_ros::TeamColor::UNKNOWN:
+            default:
+                ++unknown_count;
+                break;
+            }
+
+            if (result.confidence >= 0.30f && has_details == false) {
+                details << "det[" << i << "]="
+                        << abu_yolo_ros::teamColorToString(
+                               result.detected_team)
+                        << " conf=" << std::fixed << std::setprecision(2)
+                        << result.confidence
+                        << " red=" << result.red_coverage
+                        << " blue=" << result.blue_coverage
+                        << " match="
+                        << (result.matches_team ? "true" : "false");
+                has_details = true;
+            }
+        }
+
+        RCLCPP_DEBUG_THROTTLE(
+            this->get_logger(),
+            *this->get_clock(),
+            2000,
+            "TeamColorFilter team=%s det=%zu match=%zu red=%zu blue=%zu unknown=%zu %s",
+            abu_yolo_ros::teamColorToString(my_team_).c_str(),
+            detections.size(),
+            match_count,
+            red_count,
+            blue_count,
+            unknown_count,
+            has_details ? details.str().c_str() : "");
+    }
+
 private:
 
     std::unique_ptr<abu_yolo_ros::YOLODetector> detector_;
@@ -280,9 +375,12 @@ private:
     bool use_gpu_;
     bool visualize_;
     bool log_timing_;
+    bool enable_team_color_filter_;
 
     int skip_frames_;
     uint64_t frame_count_;
+    std::string team_color_string_;
+    abu_yolo_ros::TeamColor my_team_;
 };
 
 int main(int argc, char** argv) {
