@@ -3,10 +3,10 @@ yolo_detection_node:
   ros__parameters:
 
     model_path:
-      /home/dacekey/ros2_ws/src/abu_yolo_ros/models/fptu_abu26_detect_yolo_v1.onnx
+      /home/dacekey/openvision_ros2_ws_v2/src/abu_yolo_ros/models/fptu_abu26_detect_yolo_v1.onnx
 
     class_names_path:
-      /home/dacekey/ros2_ws/src/abu_yolo_ros/models/fptu_abu26_detect.names
+      /home/dacekey/openvision_ros2_ws_v2/src/abu_yolo_ros/models/fptu_abu26_detect.names
 
     input_topic:
       /image_raw
@@ -24,8 +24,26 @@ yolo_detection_node:
     skip_frames: 0
 
     log_timing: false
+    debug_detections: true
     enable_team_color_filter: true
     team_color: "red"
+
+    # TeamColorFilter Thresholds
+    red_h_low_1: 0
+    red_h_high_1: 12
+    red_h_low_2: 168
+    red_h_high_2: 180
+    red_s_low: 130
+    red_v_low: 80
+
+    blue_h_low: 90
+    blue_h_high: 140
+    blue_s_low: 40
+    blue_v_low: 80
+
+    min_coverage_ratio: 0.15
+    confidence_scale: 3.0
+    min_match_confidence: 0.30
 
     publish_debug_image: true
 

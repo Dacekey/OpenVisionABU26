@@ -86,11 +86,16 @@ std::string teamColorToString(TeamColor color)
 TeamColorResult filterByTeamColor(
     const cv::Mat& bgr_image,
     const Detection& detection,
-    TeamColor my_team)
+    TeamColor my_team,
+    const TeamColorFilterConfig& config)
 {
     TeamColorResult result{
         false,
         TeamColor::UNKNOWN,
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0f,
         0.0f,
         0.0f,
         0.0f};
@@ -113,6 +118,10 @@ TeamColorResult filterByTeamColor(
 
     cv::Mat hsv_crop;
     cv::cvtColor(crop, hsv_crop, cv::COLOR_BGR2HSV);
+    const cv::Scalar mean_hsv = cv::mean(hsv_crop);
+    result.mean_h = static_cast<float>(mean_hsv[0]);
+    result.mean_s = static_cast<float>(mean_hsv[1]);
+    result.mean_v = static_cast<float>(mean_hsv[2]);
 
     cv::Mat red_mask_1;
     cv::Mat red_mask_2;
@@ -121,20 +130,20 @@ TeamColorResult filterByTeamColor(
 
     cv::inRange(
         hsv_crop,
-        cv::Scalar(0, 130, 80),
-        cv::Scalar(12, 255, 255),
+        cv::Scalar(config.red_h_low_1, config.red_s_low, config.red_v_low),
+        cv::Scalar(config.red_h_high_1, 255, 255),
         red_mask_1);
     cv::inRange(
         hsv_crop,
-        cv::Scalar(168, 130, 80),
-        cv::Scalar(180, 255, 255),
+        cv::Scalar(config.red_h_low_2, config.red_s_low, config.red_v_low),
+        cv::Scalar(config.red_h_high_2, 255, 255),
         red_mask_2);
     cv::bitwise_or(red_mask_1, red_mask_2, red_mask);
 
     cv::inRange(
         hsv_crop,
-        cv::Scalar(100, 150, 80),
-        cv::Scalar(130, 255, 255),
+        cv::Scalar(config.blue_h_low, config.blue_s_low, config.blue_v_low),
+        cv::Scalar(config.blue_h_high, 255, 255),
         blue_mask);
 
     const float crop_area = static_cast<float>(roi.area());
@@ -149,20 +158,20 @@ TeamColorResult filterByTeamColor(
 
     const bool red_dominant =
         result.red_coverage >= result.blue_coverage;
-    const float dominant_coverage =
+    result.dominant_coverage =
         red_dominant ? result.red_coverage : result.blue_coverage;
 
-    if (dominant_coverage >= kMinimumCoverage) {
+    if (result.dominant_coverage >= config.min_coverage_ratio) {
         result.detected_team =
             red_dominant ? TeamColor::RED : TeamColor::BLUE;
         result.confidence = std::min(
             1.0f,
-            dominant_coverage * kConfidenceScale);
+            static_cast<float>(result.dominant_coverage * config.confidence_scale));
     }
 
     result.matches_team =
         result.detected_team == my_team &&
-        result.confidence >= kMatchThreshold;
+        result.confidence >= config.min_match_confidence;
 
     return result;
 }

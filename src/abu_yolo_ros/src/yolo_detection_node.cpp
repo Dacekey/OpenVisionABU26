@@ -34,8 +34,26 @@ public:
         this->declare_parameter<bool>("visualize", true);
         this->declare_parameter<bool>("log_timing", false);
         this->declare_parameter<int>("skip_frames", 0);
+        this->declare_parameter<bool>("debug_detections", true);
         this->declare_parameter<bool>("enable_team_color_filter", true);
         this->declare_parameter<std::string>("team_color", "red");
+
+        // TeamColorFilter parameters
+        this->declare_parameter<int>("red_h_low_1", 0);
+        this->declare_parameter<int>("red_h_high_1", 12);
+        this->declare_parameter<int>("red_h_low_2", 168);
+        this->declare_parameter<int>("red_h_high_2", 180);
+        this->declare_parameter<int>("red_s_low", 130);
+        this->declare_parameter<int>("red_v_low", 80);
+
+        this->declare_parameter<int>("blue_h_low", 100);
+        this->declare_parameter<int>("blue_h_high", 130);
+        this->declare_parameter<int>("blue_s_low", 150);
+        this->declare_parameter<int>("blue_v_low", 80);
+
+        this->declare_parameter<double>("min_coverage_ratio", 0.15);
+        this->declare_parameter<double>("confidence_scale", 3.0);
+        this->declare_parameter<double>("min_match_confidence", 0.30);
 
         this->get_parameter("model_path", model_path_);
         this->get_parameter("class_names_path", class_names_path_);
@@ -45,10 +63,28 @@ public:
         this->get_parameter("visualize", visualize_);
         this->get_parameter("log_timing", log_timing_);
         this->get_parameter("skip_frames", skip_frames_);
+        this->get_parameter("debug_detections", debug_detections_);
         this->get_parameter(
             "enable_team_color_filter",
             enable_team_color_filter_);
         this->get_parameter("team_color", team_color_string_);
+
+        // Read TeamColorFilter config
+        this->get_parameter("red_h_low_1", tcf_config_.red_h_low_1);
+        this->get_parameter("red_h_high_1", tcf_config_.red_h_high_1);
+        this->get_parameter("red_h_low_2", tcf_config_.red_h_low_2);
+        this->get_parameter("red_h_high_2", tcf_config_.red_h_high_2);
+        this->get_parameter("red_s_low", tcf_config_.red_s_low);
+        this->get_parameter("red_v_low", tcf_config_.red_v_low);
+
+        this->get_parameter("blue_h_low", tcf_config_.blue_h_low);
+        this->get_parameter("blue_h_high", tcf_config_.blue_h_high);
+        this->get_parameter("blue_s_low", tcf_config_.blue_s_low);
+        this->get_parameter("blue_v_low", tcf_config_.blue_v_low);
+
+        this->get_parameter("min_coverage_ratio", tcf_config_.min_coverage_ratio);
+        this->get_parameter("confidence_scale", tcf_config_.confidence_scale);
+        this->get_parameter("min_match_confidence", tcf_config_.min_match_confidence);
 
         if (model_path_.empty())
             throw std::runtime_error("model_path is empty");
@@ -78,6 +114,20 @@ public:
             "Team color filter: %s | team=%s",
             enable_team_color_filter_ ? "enabled" : "disabled",
             abu_yolo_ros::teamColorToString(my_team_).c_str());
+
+        if (enable_team_color_filter_) {
+            RCLCPP_INFO(this->get_logger(), "TeamColorFilter Config:");
+            RCLCPP_INFO(this->get_logger(), "  Red H1: [%d, %d], H2: [%d, %d], S_low: %d, V_low: %d",
+                        tcf_config_.red_h_low_1, tcf_config_.red_h_high_1,
+                        tcf_config_.red_h_low_2, tcf_config_.red_h_high_2,
+                        tcf_config_.red_s_low, tcf_config_.red_v_low);
+            RCLCPP_INFO(this->get_logger(), "  Blue H: [%d, %d], S_low: %d, V_low: %d",
+                        tcf_config_.blue_h_low, tcf_config_.blue_h_high,
+                        tcf_config_.blue_s_low, tcf_config_.blue_v_low);
+            RCLCPP_INFO(this->get_logger(), "  Min Coverage: %.2f, Conf Scale: %.2f, Min Match Conf: %.2f",
+                        tcf_config_.min_coverage_ratio, tcf_config_.confidence_scale,
+                        tcf_config_.min_match_confidence);
+        }
 
         detector_ = std::make_unique<abu_yolo_ros::YOLODetector>(
             model_path_,
@@ -147,7 +197,14 @@ private:
             auto detections =
                 detector_->infer(bgr);
 
-            maybeLogTeamColorResults(bgr, detections);
+            const auto team_color_results =
+                evaluateTeamColorResults(bgr, detections);
+            maybeLogTeamColorResults(
+                detections,
+                team_color_results);
+            maybeLogDetectionDetails(
+                detections,
+                team_color_results);
             
             publishDetections(detections);
 
@@ -285,9 +342,32 @@ private:
         detection_pub_->publish(msg);
     }
 
-    void maybeLogTeamColorResults(
+    std::vector<abu_yolo_ros::TeamColorResult> evaluateTeamColorResults(
         const cv::Mat& bgr,
-        const std::vector<abu_yolo_ros::Detection>& detections)
+        const std::vector<abu_yolo_ros::Detection>& detections) const
+    {
+        std::vector<abu_yolo_ros::TeamColorResult> results;
+
+        if (!enable_team_color_filter_) {
+            return results;
+        }
+
+        results.reserve(detections.size());
+        for (const auto& detection : detections) {
+            results.push_back(
+                abu_yolo_ros::filterByTeamColor(
+                    bgr,
+                    detection,
+                    my_team_,
+                    tcf_config_));
+        }
+
+        return results;
+    }
+
+    void maybeLogTeamColorResults(
+        const std::vector<abu_yolo_ros::Detection>& detections,
+        const std::vector<abu_yolo_ros::TeamColorResult>& team_color_results)
     {
         if (!enable_team_color_filter_) {
             return;
@@ -302,11 +382,7 @@ private:
         bool has_details = false;
 
         for (std::size_t i = 0; i < detections.size(); ++i) {
-            const auto result =
-                abu_yolo_ros::filterByTeamColor(
-                    bgr,
-                    detections[i],
-                    my_team_);
+            const auto& result = team_color_results[i];
 
             if (result.matches_team) {
                 ++match_count;
@@ -331,8 +407,13 @@ private:
                                result.detected_team)
                         << " conf=" << std::fixed << std::setprecision(2)
                         << result.confidence
+                        << " hsv=(" << result.mean_h
+                        << "," << result.mean_s
+                        << "," << result.mean_v
+                        << ")"
                         << " red=" << result.red_coverage
                         << " blue=" << result.blue_coverage
+                        << " dominant=" << result.dominant_coverage
                         << " match="
                         << (result.matches_team ? "true" : "false");
                 has_details = true;
@@ -351,6 +432,55 @@ private:
             blue_count,
             unknown_count,
             has_details ? details.str().c_str() : "");
+    }
+
+    void maybeLogDetectionDetails(
+        const std::vector<abu_yolo_ros::Detection>& detections,
+        const std::vector<abu_yolo_ros::TeamColorResult>& team_color_results)
+    {
+        if (!debug_detections_) {
+            return;
+        }
+
+        std::ostringstream stream;
+        stream << "Detection details count=" << detections.size();
+
+        for (std::size_t i = 0; i < detections.size(); ++i) {
+            const auto& detection = detections[i];
+
+            stream << "\n  [" << i << "]"
+                   << " class_id=" << detection.class_id
+                   << " conf=" << std::fixed << std::setprecision(2)
+                   << detection.confidence
+                   << " bbox(x=" << detection.x
+                   << ", y=" << detection.y
+                   << ", w=" << detection.w
+                   << ", h=" << detection.h
+                   << ")";
+
+            if (enable_team_color_filter_ &&
+                i < team_color_results.size()) {
+                const auto& result = team_color_results[i];
+                stream << " team=" << abu_yolo_ros::teamColorToString(
+                                        result.detected_team)
+                       << " match="
+                       << (result.matches_team ? "true" : "false")
+                       << " mean_h=" << result.mean_h
+                       << " mean_s=" << result.mean_s
+                       << " mean_v=" << result.mean_v
+                       << " red=" << result.red_coverage
+                       << " blue=" << result.blue_coverage
+                       << " dominant=" << result.dominant_coverage
+                       << " color_conf=" << result.confidence;
+            }
+        }
+
+        RCLCPP_INFO_THROTTLE(
+            this->get_logger(),
+            *this->get_clock(),
+            2000,
+            "%s",
+            stream.str().c_str());
     }
 
 private:
@@ -375,12 +505,14 @@ private:
     bool use_gpu_;
     bool visualize_;
     bool log_timing_;
+    bool debug_detections_;
     bool enable_team_color_filter_;
 
     int skip_frames_;
     uint64_t frame_count_;
     std::string team_color_string_;
     abu_yolo_ros::TeamColor my_team_;
+    abu_yolo_ros::TeamColorFilterConfig tcf_config_;
 };
 
 int main(int argc, char** argv) {
