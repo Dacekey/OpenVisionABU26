@@ -54,7 +54,7 @@ public:
         RCLCPP_INFO(this->get_logger(), "Using GPU: %s",
                     use_gpu_ ? "true" : "false");
 
-        detector_ = std::make_unique<YOLODetector>(
+        detector_ = std::make_unique<abu_yolo_ros::YOLODetector>(
             model_path_,
             class_names_path_,
             use_gpu_);
@@ -125,6 +125,18 @@ private:
             publishDetections(detections);
 
             auto t2 = std::chrono::steady_clock::now();
+            
+            // auto duration =
+            //     std::chrono::duration_cast<
+            //         std::chrono::milliseconds
+            //     >(t2 - t1).count();
+            
+            // 
+            // RCLCPP_INFO(
+            //     this->get_logger(),
+            //     "Inference time: %ld ms",
+            //     duration
+            // );
 
             // Visualization
             cv::Mat output;
@@ -197,7 +209,7 @@ private:
     }
 
     void publishDetections(
-        const std::vector<Detection>& detections)
+        const std::vector<abu_yolo_ros::Detection>& detections)
     {
         vision_msgs::msg::Detection2DArray msg;
 
@@ -248,7 +260,7 @@ private:
 
 private:
 
-    std::unique_ptr<YOLODetector> detector_;
+    std::unique_ptr<abu_yolo_ros::YOLODetector> detector_;
 
     rclcpp::Subscription<
         sensor_msgs::msg::Image>::SharedPtr sub_;

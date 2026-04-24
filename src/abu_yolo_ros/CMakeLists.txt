@@ -96,6 +96,11 @@ install(TARGETS
 )
 
 install(
+  DIRECTORY include/
+  DESTINATION include
+)
+
+install(
   DIRECTORY
     config
     launch

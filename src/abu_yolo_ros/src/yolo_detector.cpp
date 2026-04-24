@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <fstream>
 
+namespace abu_yolo_ros {
+
 static std::vector<int> applyNMS(
     const std::vector<cv::Rect>& boxes,
     const std::vector<float>& scores,
@@ -314,3 +316,5 @@ cv::Mat YOLODetector::inferAndDraw(const cv::Mat& image) const {
     auto detections = infer(image);
     return drawDetections(image, detections);
 }
+
+}  // namespace abu_yolo_ros

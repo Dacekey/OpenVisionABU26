@@ -3,10 +3,10 @@ yolo_detection_node:
   ros__parameters:
 
     model_path:
-      /workspace/src/abu_yolo_ros/models/fptu_abu26_detect_yolo_v1.onnx
+      /home/dacekey/ros2_ws/src/abu_yolo_ros/models/fptu_abu26_detect_yolo_v1.onnx
 
     class_names_path:
-      /workspace/src/abu_yolo_ros/models/fptu_abu26_detect.names
+      /home/dacekey/ros2_ws/src/abu_yolo_ros/models/fptu_abu26_detect.names
 
     input_topic:
       /image_raw

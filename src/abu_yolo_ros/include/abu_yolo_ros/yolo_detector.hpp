@@ -7,14 +7,9 @@
 #include <opencv2/opencv.hpp>
 #include <onnxruntime_cxx_api.h>
 
-struct Detection {
-    int class_id;
-    float confidence;
-    float x;
-    float y;
-    float w;
-    float h;
-};
+#include "abu_yolo_ros/detection_types.hpp"
+
+namespace abu_yolo_ros {
 
 class YOLODetector {
 public:
@@ -46,3 +41,5 @@ private:
     std::vector<std::vector<int64_t>> input_shapes_;
     std::vector<std::vector<int64_t>> output_shapes_;
 };
+
+}  // namespace abu_yolo_ros
