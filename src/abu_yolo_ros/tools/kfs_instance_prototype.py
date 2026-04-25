@@ -72,6 +72,61 @@ DEFAULT_CONFIG = {
             "log_rejected_candidates": True,
         },
     },
+    "merge_ranking": {
+        "enabled": True,
+        "prefer_same_face_alignment": True,
+        "prefer_vertical_or_horizontal_face_consistency": True,
+        "prefer_larger_intersection_or_overlap": True,
+        "prefer_smaller_gap": True,
+        "prefer_closer_centers": True,
+        "prefer_similar_scale": True,
+        "prefer_same_or_compatible_class_family": True,
+        "weights": {
+            "overlap": 2.0,
+            "gap": 1.5,
+            "center_distance": 1.0,
+            "scale_similarity": 1.0,
+            "face_alignment": 2.0,
+            "same_class_family": 1.0,
+            "color_support": 0.5,
+        },
+        "use_vertical_stack_prior": True,
+        "vertical_stack_weight": 1.0,
+        "cross_depth_penalty_weight": 1.0,
+        "vertical_stack_min_x_overlap_ratio": 0.25,
+        "vertical_stack_max_center_x_gap_norm": 0.45,
+        "vertical_stack_min_y_separation_norm": 0.15,
+        "vertical_stack_max_merged_aspect_ratio": 2.8,
+        "vertical_stack_max_area_growth_ratio": 3.5,
+        "cross_depth_min_y_separation_norm": 0.25,
+        "cross_depth_low_x_overlap_ratio": 0.15,
+        "foreground_occlusion": {
+            "enabled": True,
+            "weight": 0.9,
+            "same_foreground_band_weight": 1.0,
+            "bottom_y_similarity_weight": 1.0,
+            "vertical_order_weight": 0.6,
+            "occlusion_penalty_weight": 1.0,
+            "max_bottom_y_gap_norm": 0.55,
+            "max_center_y_gap_norm": 0.85,
+            "max_foreground_band_gap_norm": 0.65,
+        },
+        "anti_occlusion_steal": {
+            "enabled": True,
+            "weight": 1.25,
+            "require_competing_candidate": True,
+            "min_x_overlap_ratio": 0.80,
+            "max_center_x_gap_norm": 0.12,
+            "min_center_y_gap_norm": 0.75,
+            "min_bottom_y_gap_norm": 0.75,
+            "require_negative_foreground_occlusion": True,
+            "min_score_margin_to_apply": 0.0,
+            "prefer_candidate_with_lower_occlusion_penalty": True,
+            "prefer_candidate_with_better_foreground_band": True,
+            "debug": True,
+        },
+        "debug": True,
+    },
     "bbox": {
         "use_square_symbol_bbox": True,
         "square_symbol_scale": 1.0,
@@ -212,6 +267,24 @@ class MergeDiagnostic:
     merge_method: str
     reason: str
     metrics: Dict[str, Any]
+
+
+@dataclass
+class MergeCandidateRanking:
+    iteration: int
+    cluster_ids: List[int]
+    symbol_indices: List[int]
+    class_names: List[str]
+    group_types: List[str]
+    valid: bool
+    hard_gate_reason: str
+    accepted: bool
+    merge_method: str
+    reason: str
+    score: float
+    score_components: Dict[str, Any]
+    selected: bool
+    selected_reason: str
 
 
 def parse_args():
@@ -1472,6 +1545,513 @@ def merge_score(metrics: Dict[str, Optional[float]]) -> Tuple[float, float, floa
     )
 
 
+def class_family_score(first: ClusterRecord, second: ClusterRecord) -> float:
+    first_names = set(first.class_names)
+    second_names = set(second.class_names)
+    if first_names & second_names:
+        return 1.0
+    if first.group_type == second.group_type:
+        return 0.75
+    return 0.0
+
+
+def face_alignment_score(first: ClusterRecord, second: ClusterRecord) -> float:
+    first_w = max(1.0, float(first.union_bbox[2] - first.union_bbox[0]))
+    first_h = max(1.0, float(first.union_bbox[3] - first.union_bbox[1]))
+    second_w = max(1.0, float(second.union_bbox[2] - second.union_bbox[0]))
+    second_h = max(1.0, float(second.union_bbox[3] - second.union_bbox[1]))
+    first_cx, first_cy = bbox_center(first.union_bbox)
+    second_cx, second_cy = bbox_center(second.union_bbox)
+    avg_w = 0.5 * (first_w + second_w)
+    avg_h = 0.5 * (first_h + second_h)
+    horizontal_alignment = max(0.0, 1.0 - abs(first_cy - second_cy) / max(avg_h, 1.0))
+    vertical_alignment = max(0.0, 1.0 - abs(first_cx - second_cx) / max(avg_w, 1.0))
+    return max(horizontal_alignment, vertical_alignment)
+
+
+def x_overlap_ratio(first: Tuple[int, int, int, int], second: Tuple[int, int, int, int]) -> float:
+    overlap = min(first[2], second[2]) - max(first[0], second[0])
+    if overlap <= 0:
+        return 0.0
+    min_width = min(
+        max(1.0, float(first[2] - first[0])),
+        max(1.0, float(second[2] - second[0])),
+    )
+    return float(overlap) / min_width
+
+
+def bbox_area_value(bbox: Tuple[int, int, int, int]) -> float:
+    return max(1.0, float(bbox[2] - bbox[0]) * float(bbox[3] - bbox[1]))
+
+
+def vertical_stack_prior_metrics(
+    first: ClusterRecord,
+    second: ClusterRecord,
+    config: dict,
+) -> Dict[str, float]:
+    ranking_cfg = config.get("merge_ranking", {})
+    first_bbox = first.union_bbox
+    second_bbox = second.union_bbox
+    merged_bbox = (
+        min(first_bbox[0], second_bbox[0]),
+        min(first_bbox[1], second_bbox[1]),
+        max(first_bbox[2], second_bbox[2]),
+        max(first_bbox[3], second_bbox[3]),
+    )
+
+    first_cx, first_cy = bbox_center(first_bbox)
+    second_cx, second_cy = bbox_center(second_bbox)
+    avg_width = 0.5 * (
+        max(1.0, float(first_bbox[2] - first_bbox[0])) +
+        max(1.0, float(second_bbox[2] - second_bbox[0]))
+    )
+    avg_height = 0.5 * (
+        max(1.0, float(first_bbox[3] - first_bbox[1])) +
+        max(1.0, float(second_bbox[3] - second_bbox[1]))
+    )
+    overlap_ratio = x_overlap_ratio(first_bbox, second_bbox)
+    center_x_gap_norm = abs(first_cx - second_cx) / max(avg_width, 1.0)
+    center_y_separation_norm = abs(first_cy - second_cy) / max(avg_height, 1.0)
+    merged_width = max(1.0, float(merged_bbox[2] - merged_bbox[0]))
+    merged_height = max(1.0, float(merged_bbox[3] - merged_bbox[1]))
+    merged_aspect_ratio = max(merged_width / merged_height, merged_height / merged_width)
+    merged_area_growth_ratio = bbox_area_value(merged_bbox) / max(
+        bbox_area_value(first_bbox),
+        bbox_area_value(second_bbox),
+    )
+
+    overlap_gate = overlap_ratio >= float(ranking_cfg.get("vertical_stack_min_x_overlap_ratio", 0.25))
+    center_x_gate = center_x_gap_norm <= float(ranking_cfg.get("vertical_stack_max_center_x_gap_norm", 0.45))
+    y_sep_gate = center_y_separation_norm >= float(ranking_cfg.get("vertical_stack_min_y_separation_norm", 0.15))
+    aspect_gate = merged_aspect_ratio <= float(ranking_cfg.get("vertical_stack_max_merged_aspect_ratio", 2.8))
+    growth_gate = merged_area_growth_ratio <= float(ranking_cfg.get("vertical_stack_max_area_growth_ratio", 3.5))
+
+    overlap_term = min(1.0, overlap_ratio / max(float(ranking_cfg.get("vertical_stack_min_x_overlap_ratio", 0.25)), 1e-6))
+    center_x_term = max(
+        0.0,
+        1.0 - center_x_gap_norm / max(float(ranking_cfg.get("vertical_stack_max_center_x_gap_norm", 0.45)), 1e-6),
+    )
+    y_sep_term = min(
+        1.0,
+        center_y_separation_norm / max(float(ranking_cfg.get("vertical_stack_min_y_separation_norm", 0.15)), 1e-6),
+    )
+    aspect_term = max(
+        0.0,
+        1.0 - merged_aspect_ratio / max(float(ranking_cfg.get("vertical_stack_max_merged_aspect_ratio", 2.8)), 1e-6),
+    )
+    growth_term = max(
+        0.0,
+        1.0 - merged_area_growth_ratio / max(float(ranking_cfg.get("vertical_stack_max_area_growth_ratio", 3.5)), 1e-6),
+    )
+
+    vertical_stack_score = 0.0
+    if (overlap_gate or center_x_gate) and y_sep_gate and aspect_gate and growth_gate:
+        vertical_stack_score = max(
+            0.0,
+            0.30 * max(overlap_term, center_x_term) +
+            0.25 * y_sep_term +
+            0.20 * aspect_term +
+            0.15 * growth_term +
+            0.10 * face_alignment_score(first, second)
+        )
+
+    low_overlap = overlap_ratio < float(ranking_cfg.get("cross_depth_low_x_overlap_ratio", 0.15))
+    high_y_sep = center_y_separation_norm >= float(ranking_cfg.get("cross_depth_min_y_separation_norm", 0.25))
+    loose_growth = merged_area_growth_ratio > 2.0
+    strong_expanded_overlap = max(
+        bbox_iou(first.expanded_bbox, second.expanded_bbox),
+        bbox_intersection_over_min_area(first.expanded_bbox, second.expanded_bbox),
+    )
+    cross_depth_penalty = 0.0
+    if low_overlap and high_y_sep:
+        cross_depth_penalty = min(
+            1.0,
+            0.45 * min(1.0, strong_expanded_overlap) +
+            0.30 * min(1.0, center_y_separation_norm) +
+            0.25 * min(1.0, merged_area_growth_ratio / 3.0),
+        )
+        if not loose_growth:
+            cross_depth_penalty *= 0.8
+
+    return {
+        "x_overlap_ratio": overlap_ratio,
+        "center_x_gap_norm": center_x_gap_norm,
+        "center_y_separation_norm": center_y_separation_norm,
+        "merged_aspect_ratio": merged_aspect_ratio,
+        "merged_area_growth_ratio": merged_area_growth_ratio,
+        "vertical_stack_score": vertical_stack_score,
+        "cross_depth_penalty": cross_depth_penalty,
+        "vertical_stack_overlap_gate": float(overlap_gate),
+        "vertical_stack_center_x_gate": float(center_x_gate),
+        "vertical_stack_y_sep_gate": float(y_sep_gate),
+        "vertical_stack_aspect_gate": float(aspect_gate),
+        "vertical_stack_growth_gate": float(growth_gate),
+    }
+
+
+def foreground_occlusion_metrics(
+    first: ClusterRecord,
+    second: ClusterRecord,
+    config: dict,
+) -> Dict[str, float]:
+    ranking_cfg = config.get("merge_ranking", {})
+    fg_cfg = ranking_cfg.get("foreground_occlusion", {})
+    first_bbox = first.union_bbox
+    second_bbox = second.union_bbox
+
+    first_h = max(1.0, float(first_bbox[3] - first_bbox[1]))
+    second_h = max(1.0, float(second_bbox[3] - second_bbox[1]))
+    norm_h = max(first_h, second_h, 1.0)
+    first_cx, first_cy = bbox_center(first_bbox)
+    second_cx, second_cy = bbox_center(second_bbox)
+    first_bottom = float(first_bbox[3])
+    second_bottom = float(second_bbox[3])
+
+    bottom_y_gap_norm = abs(first_bottom - second_bottom) / norm_h
+    center_y_gap_norm = abs(first_cy - second_cy) / norm_h
+    foreground_band_gap_norm = 0.6 * bottom_y_gap_norm + 0.4 * center_y_gap_norm
+    scale_similarity = similarity_ratio(first_h, second_h)
+    x_overlap = x_overlap_ratio(first_bbox, second_bbox)
+
+    max_bottom_gap = max(float(fg_cfg.get("max_bottom_y_gap_norm", 0.55)), 1e-6)
+    max_center_gap = max(float(fg_cfg.get("max_center_y_gap_norm", 0.85)), 1e-6)
+    max_band_gap = max(float(fg_cfg.get("max_foreground_band_gap_norm", 0.65)), 1e-6)
+
+    bottom_y_similarity_score = max(0.0, 1.0 - bottom_y_gap_norm / max_bottom_gap)
+    center_y_similarity_score = max(0.0, 1.0 - center_y_gap_norm / max_center_gap)
+    same_foreground_band_score = max(0.0, 1.0 - foreground_band_gap_norm / max_band_gap)
+    vertical_order_score = min(1.0, center_y_gap_norm) * max(0.0, min(1.0, x_overlap))
+
+    occlusion_penalty = 0.0
+    if x_overlap > 0.20 and foreground_band_gap_norm > max_band_gap:
+        occlusion_penalty = min(
+            1.0,
+            0.45 * min(1.0, x_overlap) +
+            0.35 * min(1.0, foreground_band_gap_norm) +
+            0.20 * (1.0 - scale_similarity),
+        )
+
+    foreground_occlusion_score = (
+        float(fg_cfg.get("same_foreground_band_weight", 1.0)) * same_foreground_band_score +
+        float(fg_cfg.get("bottom_y_similarity_weight", 1.0)) * bottom_y_similarity_score +
+        float(fg_cfg.get("vertical_order_weight", 0.6)) * vertical_order_score -
+        float(fg_cfg.get("occlusion_penalty_weight", 1.0)) * occlusion_penalty
+    )
+
+    return {
+        "foreground_occlusion_score": foreground_occlusion_score,
+        "same_foreground_band_score": same_foreground_band_score,
+        "bottom_y_similarity_score": bottom_y_similarity_score,
+        "vertical_order_score": vertical_order_score,
+        "bottom_y_gap_norm": bottom_y_gap_norm,
+        "center_y_gap_norm": center_y_gap_norm,
+        "foreground_band_gap_norm": foreground_band_gap_norm,
+        "occlusion_penalty": occlusion_penalty,
+        "foreground_occlusion_enabled": float(fg_cfg.get("enabled", True)),
+    }
+
+
+def ranking_score_for_candidate(
+    first: ClusterRecord,
+    second: ClusterRecord,
+    metrics: Dict[str, Any],
+    config: dict,
+) -> Tuple[float, Dict[str, Any], Tuple[float, float, int, int]]:
+    ranking_cfg = config.get("merge_ranking", {})
+    weights = ranking_cfg.get("weights", {})
+
+    overlap_value = float(
+        max(
+            metrics.get("iou", 0.0),
+            metrics.get("intersection_over_min_area", 0.0),
+        )
+    )
+    gap_norm = max(
+        config["cluster_merge"]["max_expanded_gap_px"],
+        config.get("merge", {})
+        .get("low_mask_adjacent_same_group_fallback", {})
+        .get("max_gap_px", 45),
+        1,
+    )
+    gap_score = max(0.0, 1.0 - float(metrics.get("gap_px", 0.0)) / float(gap_norm))
+    center_norm = max(config["cluster_merge"]["max_union_center_distance_px"], 1)
+    center_score = max(
+        0.0,
+        1.0 - float(metrics.get("center_distance_px", 0.0)) / float(center_norm),
+    )
+    scale_similarity = float(
+        min(
+            1.0,
+            0.5 * (
+                max(0.0, 1.0 - abs(float(metrics.get("width_scale", 1.0)) - 1.0)) +
+                max(0.0, 1.0 - abs(float(metrics.get("height_scale", 1.0)) - 1.0))
+            ),
+        )
+    )
+    face_alignment = face_alignment_score(first, second)
+    same_class_family = class_family_score(first, second)
+    color_support = min(first.color_mask_coverage, second.color_mask_coverage)
+    stack_metrics = vertical_stack_prior_metrics(first, second, config)
+    foreground_metrics = foreground_occlusion_metrics(first, second, config)
+
+    components = {
+        "overlap": overlap_value,
+        "gap": gap_score,
+        "center_distance": center_score,
+        "scale_similarity": scale_similarity,
+        "face_alignment": face_alignment,
+        "same_class_family": same_class_family,
+        "color_support": color_support,
+        "vertical_stack_score": stack_metrics["vertical_stack_score"],
+        "cross_depth_penalty": stack_metrics["cross_depth_penalty"],
+        "x_overlap_ratio": stack_metrics["x_overlap_ratio"],
+        "center_x_gap_norm": stack_metrics["center_x_gap_norm"],
+        "center_y_separation_norm": stack_metrics["center_y_separation_norm"],
+        "merged_aspect_ratio": stack_metrics["merged_aspect_ratio"],
+        "merged_area_growth_ratio": stack_metrics["merged_area_growth_ratio"],
+        "vertical_prior_enabled": ranking_cfg.get("use_vertical_stack_prior", True),
+        "foreground_occlusion_score": foreground_metrics["foreground_occlusion_score"],
+        "same_foreground_band_score": foreground_metrics["same_foreground_band_score"],
+        "bottom_y_gap_norm": foreground_metrics["bottom_y_gap_norm"],
+        "center_y_gap_norm": foreground_metrics["center_y_gap_norm"],
+        "foreground_band_gap_norm": foreground_metrics["foreground_band_gap_norm"],
+        "occlusion_penalty": foreground_metrics["occlusion_penalty"],
+        "foreground_occlusion_enabled": bool(
+            ranking_cfg.get("foreground_occlusion", {}).get("enabled", True)
+        ),
+    }
+    components.update(stack_metrics)
+    components.update(foreground_metrics)
+    score = 0.0
+    base_score = 0.0
+    vertical_stack_delta = 0.0
+    cross_depth_penalty_delta = 0.0
+    foreground_occlusion_delta = 0.0
+    vertical_stack_applied = False
+    cross_depth_penalty_applied = False
+    foreground_occlusion_applied = False
+    vertical_stack_skip_reason = ""
+    cross_depth_penalty_skip_reason = ""
+    foreground_occlusion_skip_reason = ""
+    if ranking_cfg.get("enabled", True):
+        if ranking_cfg.get("prefer_larger_intersection_or_overlap", True):
+            base_score += float(weights.get("overlap", 2.0)) * components["overlap"]
+        if ranking_cfg.get("prefer_smaller_gap", True):
+            base_score += float(weights.get("gap", 1.5)) * components["gap"]
+        if ranking_cfg.get("prefer_closer_centers", True):
+            base_score += float(weights.get("center_distance", 1.0)) * components["center_distance"]
+        if ranking_cfg.get("prefer_similar_scale", True):
+            base_score += float(weights.get("scale_similarity", 1.0)) * components["scale_similarity"]
+        if (
+            ranking_cfg.get("prefer_same_face_alignment", True) or
+            ranking_cfg.get("prefer_vertical_or_horizontal_face_consistency", True)
+        ):
+            base_score += float(weights.get("face_alignment", 2.0)) * components["face_alignment"]
+        if ranking_cfg.get("prefer_same_or_compatible_class_family", True):
+            base_score += float(weights.get("same_class_family", 1.0)) * components["same_class_family"]
+        base_score += float(weights.get("color_support", 0.5)) * components["color_support"]
+        score = base_score
+        if ranking_cfg.get("use_vertical_stack_prior", True):
+            vertical_stack_delta = (
+                float(ranking_cfg.get("vertical_stack_weight", 1.0)) *
+                stack_metrics["vertical_stack_score"]
+            )
+            cross_depth_penalty_delta = -(
+                float(ranking_cfg.get("cross_depth_penalty_weight", 1.0)) *
+                stack_metrics["cross_depth_penalty"]
+            )
+            vertical_stack_applied = True
+            cross_depth_penalty_applied = True
+            score += vertical_stack_delta
+            score += cross_depth_penalty_delta
+        else:
+            vertical_stack_skip_reason = "vertical_stack_prior_disabled"
+            cross_depth_penalty_skip_reason = "cross_depth_penalty_disabled_with_vertical_stack_prior"
+        fg_cfg = ranking_cfg.get("foreground_occlusion", {})
+        if fg_cfg.get("enabled", True):
+            foreground_occlusion_delta = (
+                float(fg_cfg.get("weight", 0.9)) *
+                foreground_metrics["foreground_occlusion_score"]
+            )
+            foreground_occlusion_applied = True
+            score += foreground_occlusion_delta
+        else:
+            foreground_occlusion_skip_reason = "foreground_occlusion_disabled"
+    else:
+        vertical_stack_skip_reason = "merge_ranking_disabled"
+        cross_depth_penalty_skip_reason = "merge_ranking_disabled"
+        foreground_occlusion_skip_reason = "merge_ranking_disabled"
+    components["base_score"] = base_score
+    components["vertical_stack_delta"] = vertical_stack_delta
+    components["cross_depth_penalty_delta"] = cross_depth_penalty_delta
+    components["foreground_occlusion_delta"] = foreground_occlusion_delta
+    components["vertical_stack_applied"] = vertical_stack_applied
+    components["cross_depth_penalty_applied"] = cross_depth_penalty_applied
+    components["foreground_occlusion_applied"] = foreground_occlusion_applied
+    components["vertical_stack_skip_reason"] = vertical_stack_skip_reason
+    components["cross_depth_penalty_skip_reason"] = cross_depth_penalty_skip_reason
+    components["foreground_occlusion_skip_reason"] = foreground_occlusion_skip_reason
+    components["score_after_vertical_prior"] = base_score + vertical_stack_delta + cross_depth_penalty_delta
+    components["final_score_after_vertical_prior"] = components["score_after_vertical_prior"]
+    components["score_after_foreground_occlusion"] = score
+    components["final_score_after_foreground_occlusion"] = score
+    components["final_score"] = score
+
+    tie_break = (
+        float(metrics.get("intersection_over_min_area", 0.0)),
+        -float(metrics.get("center_distance_px", 0.0)),
+        -min(first.cluster_id, second.cluster_id),
+        -max(first.cluster_id, second.cluster_id),
+    )
+    return score, components, tie_break
+
+
+def initialize_anti_occlusion_steal_fields(candidate: MergeCandidateRanking, config: dict):
+    anti_cfg = config.get("merge_ranking", {}).get("anti_occlusion_steal", {})
+    candidate.score_components.setdefault("anti_occlusion_steal_enabled", anti_cfg.get("enabled", True))
+    candidate.score_components.setdefault("anti_occlusion_steal_applied", False)
+    candidate.score_components.setdefault("anti_occlusion_steal_penalty", 0.0)
+    candidate.score_components.setdefault("anti_occlusion_steal_delta", 0.0)
+    candidate.score_components.setdefault("anti_occlusion_steal_suspicious_projection_score", 0.0)
+    candidate.score_components.setdefault("anti_occlusion_steal_vertical_separation_score", 0.0)
+    candidate.score_components.setdefault("anti_occlusion_steal_competing_advantage_score", 0.0)
+    candidate.score_components.setdefault("anti_occlusion_steal_competing_cluster_ids", [])
+    candidate.score_components.setdefault("anti_occlusion_steal_competing_symbol_indices", [])
+    candidate.score_components.setdefault("anti_occlusion_steal_reason", "")
+    candidate.score_components.setdefault("anti_occlusion_steal_skip_reason", "")
+    candidate.score_components.setdefault("score_before_anti_occlusion_steal", candidate.score)
+    candidate.score_components.setdefault("score_after_anti_occlusion_steal", candidate.score)
+
+
+def candidates_compete(first: MergeCandidateRanking, second: MergeCandidateRanking) -> bool:
+    return bool(
+        set(first.cluster_ids) & set(second.cluster_ids) or
+        set(first.symbol_indices) & set(second.symbol_indices)
+    )
+
+
+def apply_anti_occlusion_steal_penalty(
+    iteration_candidates: List[MergeCandidateRanking],
+    config: dict,
+):
+    anti_cfg = config.get("merge_ranking", {}).get("anti_occlusion_steal", {})
+    for candidate in iteration_candidates:
+        initialize_anti_occlusion_steal_fields(candidate, config)
+        candidate.score_components["score_before_anti_occlusion_steal"] = candidate.score
+        candidate.score_components["score_after_anti_occlusion_steal"] = candidate.score
+
+    if not anti_cfg.get("enabled", True):
+        for candidate in iteration_candidates:
+            candidate.score_components["anti_occlusion_steal_skip_reason"] = "anti_occlusion_steal_disabled"
+            candidate.score_components["final_score"] = candidate.score
+        return
+
+    valid_candidates = [candidate for candidate in iteration_candidates if candidate.valid]
+    for candidate in valid_candidates:
+        competitors = [
+            other for other in valid_candidates
+            if other is not candidate and candidates_compete(candidate, other)
+        ]
+        if anti_cfg.get("require_competing_candidate", True) and not competitors:
+            candidate.score_components["anti_occlusion_steal_skip_reason"] = "no_competing_candidate"
+            candidate.score_components["final_score"] = candidate.score
+            continue
+
+        x_overlap_ratio = float(candidate.score_components.get("x_overlap_ratio", 0.0))
+        center_x_gap_norm = float(candidate.score_components.get("center_x_gap_norm", 1.0))
+        center_y_gap_norm = float(candidate.score_components.get("center_y_gap_norm", 0.0))
+        bottom_y_gap_norm = float(candidate.score_components.get("bottom_y_gap_norm", 0.0))
+        foreground_occlusion_score = float(candidate.score_components.get("foreground_occlusion_score", 0.0))
+        occlusion_penalty = float(candidate.score_components.get("occlusion_penalty", 0.0))
+        same_foreground_band_score = float(candidate.score_components.get("same_foreground_band_score", 0.0))
+        foreground_band_gap_norm = float(candidate.score_components.get("foreground_band_gap_norm", 1.0))
+
+        suspicious_projection = (
+            x_overlap_ratio >= float(anti_cfg.get("min_x_overlap_ratio", 0.80)) and
+            center_x_gap_norm <= float(anti_cfg.get("max_center_x_gap_norm", 0.12))
+        )
+        vertical_separation = (
+            center_y_gap_norm >= float(anti_cfg.get("min_center_y_gap_norm", 0.75)) or
+            bottom_y_gap_norm >= float(anti_cfg.get("min_bottom_y_gap_norm", 0.75))
+        )
+        negative_fg_required = anti_cfg.get("require_negative_foreground_occlusion", True)
+        negative_fg_ok = (foreground_occlusion_score < 0.0) if negative_fg_required else True
+        if not suspicious_projection:
+            candidate.score_components["anti_occlusion_steal_skip_reason"] = "projection_not_suspicious"
+            candidate.score_components["final_score"] = candidate.score
+            continue
+        if not vertical_separation:
+            candidate.score_components["anti_occlusion_steal_skip_reason"] = "vertical_separation_too_small"
+            candidate.score_components["final_score"] = candidate.score
+            continue
+        if not negative_fg_ok:
+            candidate.score_components["anti_occlusion_steal_skip_reason"] = "foreground_occlusion_not_negative"
+            candidate.score_components["final_score"] = candidate.score
+            continue
+
+        suspicious_projection_score = 0.5 * min(1.0, x_overlap_ratio) + 0.5 * max(
+            0.0,
+            1.0 - center_x_gap_norm / max(float(anti_cfg.get("max_center_x_gap_norm", 0.12)), 1e-6),
+        )
+        vertical_separation_score = 0.5 * min(1.0, center_y_gap_norm) + 0.5 * min(1.0, bottom_y_gap_norm)
+
+        best_advantage = 0.0
+        best_competitor: Optional[MergeCandidateRanking] = None
+        for competitor in competitors:
+            competitor_occlusion_penalty = float(competitor.score_components.get("occlusion_penalty", 0.0))
+            competitor_same_foreground_band_score = float(
+                competitor.score_components.get("same_foreground_band_score", 0.0)
+            )
+            competitor_foreground_band_gap_norm = float(
+                competitor.score_components.get("foreground_band_gap_norm", 1.0)
+            )
+
+            advantage = 0.0
+            if anti_cfg.get("prefer_candidate_with_lower_occlusion_penalty", True):
+                advantage += max(0.0, occlusion_penalty - competitor_occlusion_penalty)
+            if anti_cfg.get("prefer_candidate_with_better_foreground_band", True):
+                advantage += max(0.0, competitor_same_foreground_band_score - same_foreground_band_score)
+                advantage += max(0.0, foreground_band_gap_norm - competitor_foreground_band_gap_norm)
+            advantage += max(0.0, foreground_occlusion_score - float(
+                competitor.score_components.get("foreground_occlusion_score", 0.0)
+            ))
+
+            if advantage > best_advantage:
+                best_advantage = advantage
+                best_competitor = competitor
+
+        if best_competitor is None or best_advantage <= float(anti_cfg.get("min_score_margin_to_apply", 0.0)):
+            candidate.score_components["anti_occlusion_steal_skip_reason"] = "no_better_competing_candidate"
+            candidate.score_components["final_score"] = candidate.score
+            continue
+
+        penalty = (
+            float(anti_cfg.get("weight", 1.25)) *
+            suspicious_projection_score *
+            vertical_separation_score *
+            min(1.0, best_advantage)
+        )
+        candidate.score -= penalty
+        candidate.score_components["anti_occlusion_steal_applied"] = True
+        candidate.score_components["anti_occlusion_steal_penalty"] = penalty
+        candidate.score_components["anti_occlusion_steal_delta"] = -penalty
+        candidate.score_components["anti_occlusion_steal_suspicious_projection_score"] = suspicious_projection_score
+        candidate.score_components["anti_occlusion_steal_vertical_separation_score"] = vertical_separation_score
+        candidate.score_components["anti_occlusion_steal_competing_advantage_score"] = best_advantage
+        candidate.score_components["anti_occlusion_steal_competing_cluster_ids"] = best_competitor.cluster_ids
+        candidate.score_components["anti_occlusion_steal_competing_symbol_indices"] = best_competitor.symbol_indices
+        candidate.score_components["anti_occlusion_steal_reason"] = (
+            f"suspicious_projection_with_competitor {best_competitor.cluster_ids}"
+        )
+        candidate.score_components["anti_occlusion_steal_skip_reason"] = ""
+        candidate.score_components["score_after_anti_occlusion_steal"] = candidate.score
+        candidate.score_components["final_score"] = candidate.score
+
+    for candidate in iteration_candidates:
+        candidate.score_components.setdefault("final_score", candidate.score)
+        candidate.score_components.setdefault("score_after_anti_occlusion_steal", candidate.score)
+
+
 def merge_clusters_second_stage(
     clusters: Sequence[ClusterRecord],
     cluster_groupings: Dict[int, List[SymbolRecord]],
@@ -1484,11 +2064,13 @@ def merge_clusters_second_stage(
     List[Tuple[int, np.ndarray, np.ndarray, Optional[np.ndarray], Tuple[int, int, int, int], str]],
     List[MergeStep],
     List[MergeDiagnostic],
+    List[MergeCandidateRanking],
 ]:
     active_clusters = {cluster.cluster_id: cluster for cluster in clusters}
     active_groupings = {cluster_id: list(group) for cluster_id, group in cluster_groupings.items()}
     merge_steps: List[MergeStep] = []
     merge_diagnostics: List[MergeDiagnostic] = []
+    merge_candidate_rankings: List[MergeCandidateRanking] = []
 
     if not config["cluster_merge"]["enabled"]:
         mask_debug: List[Tuple[int, np.ndarray, np.ndarray, Optional[np.ndarray], Tuple[int, int, int, int], str]] = []
@@ -1502,13 +2084,23 @@ def merge_clusters_second_stage(
                 merged_from=cluster.merged_from,
             )
             mask_debug.append(debug)
-        return list(clusters), active_groupings, mask_debug, merge_steps, merge_diagnostics
+        return (
+            list(clusters),
+            active_groupings,
+            mask_debug,
+            merge_steps,
+            merge_diagnostics,
+            merge_candidate_rankings,
+        )
 
+    iteration_index = 0
     while True:
         best_pair = None
         best_reason = ""
         best_metrics: Dict[str, Any] = {}
-        best_score = None
+        best_score: Optional[float] = None
+        best_tie_break: Optional[Tuple[float, float, int, int]] = None
+        iteration_candidates: List[MergeCandidateRanking] = []
 
         cluster_ids = sorted(active_clusters.keys())
         for i in range(len(cluster_ids)):
@@ -1523,6 +2115,8 @@ def merge_clusters_second_stage(
                     config,
                 )
                 merged_symbols = active_groupings[left_id] + active_groupings[right_id]
+                hard_gate_valid = allowed
+                hard_gate_reason = "passed_hard_gates" if allowed else reason
                 final_allowed = allowed
                 final_reason = reason
                 final_metrics = metrics
@@ -1581,15 +2175,152 @@ def merge_clusters_second_stage(
                         metrics=final_metrics,
                     )
                 )
+                candidate_score = -1e9
+                score_components: Dict[str, Any] = {
+                    "iou": final_metrics.get("iou"),
+                    "intersection_over_min_area": final_metrics.get("intersection_over_min_area"),
+                    "gap_px": final_metrics.get("gap_px"),
+                    "center_distance_px": final_metrics.get("center_distance_px"),
+                    "distance_diff_m": final_metrics.get("distance_diff_m"),
+                    "width_scale": final_metrics.get("width_scale"),
+                    "height_scale": final_metrics.get("height_scale"),
+                    "compactness_pass": final_metrics.get("compactness_pass"),
+                    "strong_spatial_pass": final_metrics.get("strong_spatial_pass"),
+                    "center_distance_only_used": final_metrics.get("center_distance_only_used"),
+                    "fallback_reason": final_metrics.get("fallback_reason", ""),
+                    "fallback_checks": final_metrics.get("fallback_checks", {}),
+                }
+                tie_break = (
+                    float(final_metrics.get("intersection_over_min_area", 0.0)),
+                    -float(final_metrics.get("center_distance_px", 0.0)),
+                    -min(left_id, right_id),
+                    -max(left_id, right_id),
+                )
+                if final_allowed:
+                    candidate_score, score_components, tie_break = ranking_score_for_candidate(
+                        active_clusters[left_id],
+                        active_clusters[right_id],
+                        final_metrics,
+                        config,
+                    )
+                iteration_candidates.append(
+                    MergeCandidateRanking(
+                        iteration=iteration_index,
+                        cluster_ids=[left_id, right_id],
+                        symbol_indices=sorted({symbol.index for symbol in merged_symbols}),
+                        class_names=sorted(
+                            {
+                                *active_clusters[left_id].class_names,
+                                *active_clusters[right_id].class_names,
+                            }
+                        ),
+                        group_types=[
+                            active_clusters[left_id].group_type,
+                            active_clusters[right_id].group_type,
+                        ],
+                        valid=final_allowed,
+                        hard_gate_reason=hard_gate_reason,
+                        accepted=final_allowed,
+                        merge_method=final_metrics.get("merge_method", "normal"),
+                        reason=final_reason,
+                        score=candidate_score,
+                        score_components=score_components,
+                        selected=False,
+                        selected_reason="",
+                    )
+                )
                 if not final_allowed:
                     continue
 
-                score = merge_score(final_metrics)
-                if best_score is None or score > best_score:
-                    best_score = score
+                if (
+                    best_score is None
+                ):
+                    best_score = candidate_score
+                    best_tie_break = tie_break
                     best_pair = (left_id, right_id)
                     best_reason = final_reason
                     best_metrics = final_metrics
+
+        apply_anti_occlusion_steal_penalty(iteration_candidates, config)
+
+        best_pair = None
+        best_reason = ""
+        best_metrics = {}
+        best_score = None
+        best_tie_break = None
+        for candidate in iteration_candidates:
+            if not candidate.valid:
+                continue
+            tie_break = (
+                float(candidate.score_components.get("intersection_over_min_area", 0.0)),
+                -float(candidate.score_components.get("center_distance_px", 0.0)),
+                -min(candidate.cluster_ids),
+                -max(candidate.cluster_ids),
+            )
+            if (
+                best_score is None or
+                candidate.score > best_score or
+                (
+                    math.isclose(candidate.score, best_score, rel_tol=1e-9, abs_tol=1e-9) and
+                    (best_tie_break is None or tie_break > best_tie_break)
+                )
+            ):
+                best_score = candidate.score
+                best_tie_break = tie_break
+                best_pair = (candidate.cluster_ids[0], candidate.cluster_ids[1])
+                best_reason = candidate.reason
+                best_metrics = dict(candidate.score_components)
+
+        if best_pair is not None:
+            for candidate in iteration_candidates:
+                if candidate.cluster_ids == [best_pair[0], best_pair[1]]:
+                    candidate.selected = True
+                    selection_mode = "selected_by_ranking"
+                    if candidate.score_components.get("anti_occlusion_steal_applied", False) and not math.isclose(
+                        float(candidate.score_components.get("anti_occlusion_steal_delta", 0.0)),
+                        0.0,
+                        rel_tol=1e-9,
+                        abs_tol=1e-9,
+                    ):
+                        selection_mode = "selected_by_ranking_anti_occlusion_steal_prior"
+                    elif candidate.score_components.get("foreground_occlusion_applied", False) and not math.isclose(
+                        float(candidate.score_components.get("foreground_occlusion_delta", 0.0)),
+                        0.0,
+                        rel_tol=1e-9,
+                        abs_tol=1e-9,
+                    ):
+                        selection_mode = "selected_by_ranking_foreground_occlusion_prior"
+                    elif (
+                        candidate.score_components.get("vertical_stack_applied", False) and
+                        (
+                            not math.isclose(
+                                float(candidate.score_components.get("vertical_stack_delta", 0.0)),
+                                0.0,
+                                rel_tol=1e-9,
+                                abs_tol=1e-9,
+                            ) or
+                            not math.isclose(
+                                float(candidate.score_components.get("cross_depth_penalty_delta", 0.0)),
+                                0.0,
+                                rel_tol=1e-9,
+                                abs_tol=1e-9,
+                            )
+                        )
+                    ):
+                        selection_mode = "selected_by_ranking_vertical_stack_prior"
+                    candidate.selected_reason = (
+                        f"{selection_mode} "
+                        f"base_score={float(candidate.score_components.get('base_score', 0.0)):.4f} "
+                        f"score_after_vertical_prior={float(candidate.score_components.get('score_after_vertical_prior', candidate.score)):.4f} "
+                        f"score_after_anti_occlusion_steal={float(candidate.score_components.get('score_after_anti_occlusion_steal', candidate.score)):.4f} "
+                        f"final_score={candidate.score:.4f} "
+                        f"with tie_break="
+                        f"(intersection_over_min_area={best_metrics.get('intersection_over_min_area', 0.0):.4f}, "
+                        f"center_distance_px={best_metrics.get('center_distance_px', 0.0):.2f}, "
+                        f"cluster_ids={best_pair})"
+                    )
+                    break
+        merge_candidate_rankings.extend(iteration_candidates)
 
         if best_pair is None:
             break
@@ -1625,6 +2356,7 @@ def merge_clusters_second_stage(
             f"Merged clusters C{left_id} + C{right_id} -> C{left_id} "
             f"symbols={merged_cluster.symbol_indices} reason=\"{best_reason}\""
         )
+        iteration_index += 1
 
     final_clusters = [active_clusters[cluster_id] for cluster_id in sorted(active_clusters.keys())]
     final_mask_debug: List[Tuple[int, np.ndarray, np.ndarray, Optional[np.ndarray], Tuple[int, int, int, int], str]] = []
@@ -1639,7 +2371,14 @@ def merge_clusters_second_stage(
         )
         final_mask_debug.append(debug)
 
-    return final_clusters, active_groupings, final_mask_debug, merge_steps, merge_diagnostics
+    return (
+        final_clusters,
+        active_groupings,
+        final_mask_debug,
+        merge_steps,
+        merge_diagnostics,
+        merge_candidate_rankings,
+    )
 
 
 def symbol_union_bbox_from_source(
@@ -2298,7 +3037,9 @@ def summary_payload(
     dropped_clusters: Sequence[dict],
     merge_steps: Sequence[MergeStep],
     merge_diagnostics: Sequence[MergeDiagnostic],
+    merge_candidate_rankings: Sequence[MergeCandidateRanking],
 ) -> dict:
+    iterations = sorted({candidate.iteration for candidate in merge_candidate_rankings})
     return {
         "image": str(image_path),
         "model": str(Path(args.model).expanduser()),
@@ -2309,6 +3050,7 @@ def summary_payload(
         "roi_filter": config["roi_filter"],
         "cluster_merge": config["cluster_merge"],
         "merge": config.get("merge", {}),
+        "merge_ranking": config.get("merge_ranking", {}),
         "aggregation": config.get("aggregation", {}),
         "bbox_expand": {
             "use_square_symbol_bbox": config["bbox"].get("use_square_symbol_bbox"),
@@ -2406,6 +3148,68 @@ def summary_payload(
             }
             for diagnostic in merge_diagnostics
         ],
+        "merge_candidate_rankings": [
+            {
+                "iteration": candidate.iteration,
+                "cluster_ids": candidate.cluster_ids,
+                "symbol_indices": candidate.symbol_indices,
+                "class_names": candidate.class_names,
+                "group_types": candidate.group_types,
+                "valid": candidate.valid,
+                "hard_gate_reason": candidate.hard_gate_reason,
+                "accepted": candidate.accepted,
+                "merge_method": candidate.merge_method,
+                "reason": candidate.reason,
+                "score": candidate.score,
+                "score_components": candidate.score_components,
+                "selected": candidate.selected,
+                "selected_reason": candidate.selected_reason,
+            }
+            for candidate in merge_candidate_rankings
+        ],
+        "merge_iterations": [
+            {
+                "iteration": iteration,
+                "selected_candidate": next(
+                    (
+                        {
+                            "cluster_ids": candidate.cluster_ids,
+                            "symbol_indices": candidate.symbol_indices,
+                            "class_names": candidate.class_names,
+                            "group_types": candidate.group_types,
+                            "merge_method": candidate.merge_method,
+                            "reason": candidate.reason,
+                            "score": candidate.score,
+                            "score_components": candidate.score_components,
+                            "selected_reason": candidate.selected_reason,
+                        }
+                        for candidate in merge_candidate_rankings
+                        if candidate.iteration == iteration and candidate.selected
+                    ),
+                    None,
+                ),
+                "candidates": [
+                    {
+                        "cluster_ids": candidate.cluster_ids,
+                        "symbol_indices": candidate.symbol_indices,
+                        "class_names": candidate.class_names,
+                        "group_types": candidate.group_types,
+                        "valid": candidate.valid,
+                        "hard_gate_reason": candidate.hard_gate_reason,
+                        "accepted": candidate.accepted,
+                        "merge_method": candidate.merge_method,
+                        "reason": candidate.reason,
+                        "score": candidate.score,
+                        "score_components": candidate.score_components,
+                        "selected": candidate.selected,
+                        "selected_reason": candidate.selected_reason,
+                    }
+                    for candidate in merge_candidate_rankings
+                    if candidate.iteration == iteration
+                ],
+            }
+            for iteration in iterations
+        ],
     }
 
 
@@ -2451,6 +3255,7 @@ def main() -> int:
         f"scale_x={config['bbox'].get('expand_scale_x')} "
         f"scale_y={config['bbox'].get('expand_scale_y')}"
     )
+    print(f"Effective merge ranking config: {config.get('merge_ranking', {})}")
     print(f"Contour selection mode: {config['contour']['selection']}")
     kept_symbols = apply_range_filter(symbols, config)
     kept_symbols = apply_roi_filter(
@@ -2465,7 +3270,7 @@ def main() -> int:
         args,
         config,
     )
-    clusters, cluster_groupings, mask_debug, merge_steps, merge_diagnostics = merge_clusters_second_stage(
+    clusters, cluster_groupings, mask_debug, merge_steps, merge_diagnostics, merge_candidate_rankings = merge_clusters_second_stage(
         first_stage_clusters,
         cluster_groupings,
         image,
@@ -2519,6 +3324,7 @@ def main() -> int:
         dropped_clusters,
         merge_steps,
         merge_diagnostics,
+        merge_candidate_rankings,
     )
     with (output_dir / "kfs_instance_summary.json").open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2)

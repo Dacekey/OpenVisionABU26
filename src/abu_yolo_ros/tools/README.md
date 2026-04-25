@@ -187,12 +187,27 @@ Second-stage cluster merge:
 
 - Close KFS can show symbols on different faces that are far apart in 2D because of perspective.
 - The prototype now keeps the first-stage symbol clustering, then runs a second-stage merge over cluster candidates.
+- The second-stage merge uses hard safety gates first, then ranks only the already-valid candidates to choose the best merge pair for that iteration.
 - Medium-distance KFS can false-merge if the second stage is too permissive, so the current merge also applies a compactness guard to the proposed merged symbol union.
 - Merge requires semantic compatibility, enough HSV color-mask support, a strong spatial condition, and compact merged geometry.
 - Center distance is debug-only by default and does not accept a merge by itself unless explicitly enabled in config.
 - A narrow fallback merge exists for dark or low-quality images where HSV body-mask support is weak.
 - That fallback only considers same-group adjacent clusters with strong geometry evidence, and it should be tuned carefully because overly permissive values can merge nearby KFS boxes.
+- Candidate ranking helps when one cluster has multiple plausible neighbors: it prefers the most spatially and semantically consistent valid pair instead of relying on iteration order.
+- A vertical-stack prior can be enabled in `merge_ranking` to prefer same-KFS top/front or stacked-face relationships when multiple candidates already passed hard gates.
+- This prior is ranking-only, never bypasses hard gates, and can be disabled with `merge_ranking.use_vertical_stack_prior=false`.
+- A foreground/occlusion prior can also be enabled in `merge_ranking` to reduce false wins caused by 2D overlap from perspective or occlusion.
+- This is also ranking-only: it helps choose among already-valid candidates and does not bypass hard merge gates.
+- An anti-occlusion-steal prior can be enabled in `merge_ranking` to penalize a candidate when it strongly overlaps in projection but appears to be stealing a shared cluster from a less suspicious competing candidate.
+- This is also ranking-only and only activates when competing already-valid candidates share a cluster or symbol.
 - This is offline experimental logic only and is not part of the runtime pipeline.
+
+Inspecting a failed merge case:
+
+- Use `kfs_instance_summary.json` and check `config_used`, `merge_ranking`, `merge_diagnostics`, `merge_candidate_rankings`, and `merge_iterations`.
+- `merge_iterations` is the easiest place to compare all candidate pairs for one iteration side by side.
+- If an expected pair is missing from the selected merge, first check `hard_gate_reason` to see whether it failed a hard gate.
+- If it passed hard gates but still lost, compare `score` and `score_components` against the selected candidate to see which ranking terms made it lose.
 
 Recommended first tuning attempt after v2:
 

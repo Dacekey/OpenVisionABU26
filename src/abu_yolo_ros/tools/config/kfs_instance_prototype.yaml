@@ -50,6 +50,58 @@ merge:
     max_merged_height_scale: 2.6
     log_rejected_candidates: true
 
+merge_ranking:
+  enabled: true
+  prefer_same_face_alignment: true
+  prefer_vertical_or_horizontal_face_consistency: true
+  prefer_larger_intersection_or_overlap: true
+  prefer_smaller_gap: true
+  prefer_closer_centers: true
+  prefer_similar_scale: true
+  prefer_same_or_compatible_class_family: true
+  weights:
+    overlap: 2.0
+    gap: 1.5
+    center_distance: 1.0
+    scale_similarity: 1.0
+    face_alignment: 2.0
+    same_class_family: 1.0
+    color_support: 0.5
+  use_vertical_stack_prior: true
+  vertical_stack_weight: 1.0
+  cross_depth_penalty_weight: 1.0
+  vertical_stack_min_x_overlap_ratio: 0.25
+  vertical_stack_max_center_x_gap_norm: 0.45
+  vertical_stack_min_y_separation_norm: 0.15
+  vertical_stack_max_merged_aspect_ratio: 2.8
+  vertical_stack_max_area_growth_ratio: 3.5
+  cross_depth_min_y_separation_norm: 0.25
+  cross_depth_low_x_overlap_ratio: 0.15
+  foreground_occlusion:
+    enabled: true
+    weight: 0.9
+    same_foreground_band_weight: 1.0
+    bottom_y_similarity_weight: 1.0
+    vertical_order_weight: 0.6
+    occlusion_penalty_weight: 1.0
+    max_bottom_y_gap_norm: 0.55
+    max_center_y_gap_norm: 0.85
+    max_foreground_band_gap_norm: 0.65
+  anti_occlusion_steal:
+    enabled: true
+    weight: 1.25
+    require_competing_candidate: true
+    min_x_overlap_ratio: 0.80
+    max_center_x_gap_norm: 0.12
+    min_center_y_gap_norm: 0.75
+    min_bottom_y_gap_norm: 0.75
+    require_negative_foreground_occlusion: true
+    min_score_margin_to_apply: 0.0
+    prefer_candidate_with_lower_occlusion_penalty: true
+    prefer_candidate_with_better_foreground_band: true
+    debug: true
+  debug: true
+
 bbox:
   use_square_symbol_bbox: true
   square_symbol_scale: 1.0
