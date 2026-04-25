@@ -1,0 +1,671 @@
+{
+  "image": "/home/dacekey/openvision_ros2_ws_v2/src/abu_yolo_ros/tools/data_test/test_images/13.png",
+  "model": "models/fptu_abu26_detect_yolo_v1.onnx",
+  "team_color": "blue",
+  "config_path": "/home/dacekey/openvision_ros2_ws_v2/src/abu_yolo_ros/tools/config/kfs_instance_prototype.yaml",
+  "config_used": {
+    "range_filter": {
+      "mode": "bbox_size",
+      "min_symbol_height_px": 60,
+      "min_symbol_area_px": 4000,
+      "min_confidence": 0.25,
+      "max_distance_m": 1.0,
+      "min_distance_m": 0.2
+    },
+    "clustering": {
+      "cluster_distance_scale": 2.5,
+      "min_cluster_distance_px": 35,
+      "max_cluster_distance_px": 180,
+      "max_depth_diff_m": 0.25,
+      "max_symbols_per_instance": 3,
+      "min_height_similarity_for_grouping": 0.6,
+      "min_area_similarity_for_grouping": 0.3,
+      "max_bottom_y_diff_ratio": 1.2
+    },
+    "cluster_merge": {
+      "enabled": true,
+      "merge_same_group_only": true,
+      "max_symbols_after_merge": 3,
+      "min_expanded_iou": 0.03,
+      "min_expanded_intersection_over_min_area": 0.12,
+      "max_expanded_gap_px": 40,
+      "max_union_center_distance_px": 550,
+      "allow_center_distance_only_merge": false,
+      "min_color_mask_coverage_for_merge": 0.15,
+      "use_distance_check": false,
+      "max_distance_diff_m": 0.35,
+      "max_merged_union_width_scale": 2.2,
+      "max_merged_union_height_scale": 2.6
+    },
+    "bbox": {
+      "expand_scale": 1.6,
+      "expand_scale_x": 1.8,
+      "expand_scale_y": 1.8,
+      "max_expanded_area_ratio": 0.25
+    },
+    "roi_filter": {
+      "enabled": true,
+      "preset": "none",
+      "mode": "normalized_box",
+      "x_min_norm": 0.0,
+      "x_max_norm": 0.78,
+      "y_min_norm": 0.22,
+      "y_max_norm": 1.0,
+      "polygon": []
+    },
+    "hsv_mask": {
+      "mode": "red_or_blue_or_dark_blue",
+      "red_h_low_1": 0,
+      "red_h_high_1": 12,
+      "red_h_low_2": 168,
+      "red_h_high_2": 180,
+      "red_s_low": 130,
+      "red_v_low": 80,
+      "blue_h_low": 90,
+      "blue_h_high": 140,
+      "blue_s_low": 40,
+      "blue_v_low": 80,
+      "dark_blue_h_low": 90,
+      "dark_blue_h_high": 140,
+      "dark_blue_s_low": 20,
+      "dark_blue_v_low": 15,
+      "dark_blue_v_high": 160
+    },
+    "contour": {
+      "enabled": true,
+      "min_contour_area_px": 300,
+      "morphology_kernel_size": 5,
+      "morphology_iterations": 1,
+      "selection": "closest_to_symbol_union_center",
+      "max_center_offset_ratio": 1.0,
+      "min_refined_to_union_area_ratio": 0.5
+    },
+    "debug_white_mask": {
+      "enabled": true,
+      "s_high": 80,
+      "v_low": 150,
+      "debug_only": true
+    }
+  },
+  "range_mode": "bbox_size",
+  "roi_filter": {
+    "enabled": true,
+    "preset": "none",
+    "mode": "normalized_box",
+    "x_min_norm": 0.0,
+    "x_max_norm": 0.78,
+    "y_min_norm": 0.22,
+    "y_max_norm": 1.0,
+    "polygon": []
+  },
+  "cluster_merge": {
+    "enabled": true,
+    "merge_same_group_only": true,
+    "max_symbols_after_merge": 3,
+    "min_expanded_iou": 0.03,
+    "min_expanded_intersection_over_min_area": 0.12,
+    "max_expanded_gap_px": 40,
+    "max_union_center_distance_px": 550,
+    "allow_center_distance_only_merge": false,
+    "min_color_mask_coverage_for_merge": 0.15,
+    "use_distance_check": false,
+    "max_distance_diff_m": 0.35,
+    "max_merged_union_width_scale": 2.2,
+    "max_merged_union_height_scale": 2.6
+  },
+  "bbox_expand": {
+    "expand_scale": 1.6,
+    "expand_scale_x": 1.8,
+    "expand_scale_y": 1.8
+  },
+  "contour_selection": "closest_to_symbol_union_center",
+  "symbols": [
+    {
+      "index": 0,
+      "class_id": 14,
+      "class_name": "FAKE_9",
+      "confidence": 0.9241394400596619,
+      "bbox": [
+        665,
+        288,
+        721,
+        376
+      ],
+      "bbox_height": 88.0,
+      "bbox_area": 4928.0,
+      "estimated_distance_m": 0.9560747663551402,
+      "keep": true,
+      "drop_reason": "",
+      "roi_inside": true
+    },
+    {
+      "index": 1,
+      "class_id": 4,
+      "class_name": "FAKE_13",
+      "confidence": 0.9123709797859192,
+      "bbox": [
+        1721,
+        92,
+        1787,
+        176
+      ],
+      "bbox_height": 84.0,
+      "bbox_area": 5544.0,
+      "estimated_distance_m": 1.582926829268293,
+      "keep": false,
+      "drop_reason": "outside_roi",
+      "roi_inside": false
+    },
+    {
+      "index": 2,
+      "class_id": 15,
+      "class_name": "R1",
+      "confidence": 0.9092342853546143,
+      "bbox": [
+        935,
+        739,
+        1191,
+        872
+      ],
+      "bbox_height": 133.0,
+      "bbox_area": 34048.0,
+      "estimated_distance_m": 0.2017751479289941,
+      "keep": true,
+      "drop_reason": "",
+      "roi_inside": true
+    },
+    {
+      "index": 3,
+      "class_id": 5,
+      "class_name": "FAKE_14",
+      "confidence": 0.9072479605674744,
+      "bbox": [
+        1677,
+        258,
+        1797,
+        404
+      ],
+      "bbox_height": 146.0,
+      "bbox_area": 17520.0,
+      "estimated_distance_m": 0.8909502262443441,
+      "keep": false,
+      "drop_reason": "outside_roi",
+      "roi_inside": false
+    },
+    {
+      "index": 4,
+      "class_id": 22,
+      "class_name": "REAL_15",
+      "confidence": 0.8921658396720886,
+      "bbox": [
+        1045,
+        229,
+        1115,
+        318
+      ],
+      "bbox_height": 89.0,
+      "bbox_area": 6230.0,
+      "estimated_distance_m": 1.105513784461153,
+      "keep": true,
+      "drop_reason": "",
+      "roi_inside": true
+    },
+    {
+      "index": 5,
+      "class_id": 30,
+      "class_name": "REAL_9",
+      "confidence": 0.8627837300300598,
+      "bbox": [
+        0,
+        456,
+        72,
+        682
+      ],
+      "bbox_height": 226.0,
+      "bbox_area": 16272.0,
+      "estimated_distance_m": 0.41462994836488803,
+      "keep": true,
+      "drop_reason": "",
+      "roi_inside": true
+    },
+    {
+      "index": 6,
+      "class_id": 21,
+      "class_name": "REAL_14",
+      "confidence": 0.8521416783332825,
+      "bbox": [
+        455,
+        428,
+        584,
+        542
+      ],
+      "bbox_height": 114.0,
+      "bbox_area": 14706.0,
+      "estimated_distance_m": 0.6221135029354207,
+      "keep": true,
+      "drop_reason": "",
+      "roi_inside": true
+    },
+    {
+      "index": 7,
+      "class_id": 24,
+      "class_name": "REAL_3",
+      "confidence": 0.8212341666221619,
+      "bbox": [
+        1555,
+        114,
+        1595,
+        178
+      ],
+      "bbox_height": 64.0,
+      "bbox_area": 2560.0,
+      "estimated_distance_m": 1.5747720364741644,
+      "keep": false,
+      "drop_reason": "bbox_area 2560.0 < min_symbol_area_px 4000",
+      "roi_inside": null
+    },
+    {
+      "index": 8,
+      "class_id": 30,
+      "class_name": "REAL_9",
+      "confidence": 0.8191289901733398,
+      "bbox": [
+        227,
+        425,
+        300,
+        648
+      ],
+      "bbox_height": 223.0,
+      "bbox_area": 16279.0,
+      "estimated_distance_m": 0.4602836879432624,
+      "keep": true,
+      "drop_reason": "",
+      "roi_inside": true
+    },
+    {
+      "index": 9,
+      "class_id": 16,
+      "class_name": "REAL_1",
+      "confidence": 0.5940470099449158,
+      "bbox": [
+        1019,
+        352,
+        1121,
+        484
+      ],
+      "bbox_height": 132.0,
+      "bbox_area": 13464.0,
+      "estimated_distance_m": 0.7257261410788384,
+      "keep": true,
+      "drop_reason": "",
+      "roi_inside": true
+    },
+    {
+      "index": 10,
+      "class_id": 3,
+      "class_name": "FAKE_12",
+      "confidence": 0.48303425312042236,
+      "bbox": [
+        1716,
+        190,
+        1768,
+        230
+      ],
+      "bbox_height": 40.0,
+      "bbox_area": 2080.0,
+      "estimated_distance_m": 1.37887323943662,
+      "keep": false,
+      "drop_reason": "bbox_height 40.0 < min_symbol_height_px 60; bbox_area 2080.0 < min_symbol_area_px 4000",
+      "roi_inside": null
+    },
+    {
+      "index": 11,
+      "class_id": 26,
+      "class_name": "REAL_5",
+      "confidence": 0.47545552253723145,
+      "bbox": [
+        1019,
+        353,
+        1121,
+        484
+      ],
+      "bbox_height": 131.0,
+      "bbox_area": 13362.0,
+      "estimated_distance_m": 0.7257261410788384,
+      "keep": true,
+      "drop_reason": "",
+      "roi_inside": true
+    },
+    {
+      "index": 12,
+      "class_id": 15,
+      "class_name": "R1",
+      "confidence": 0.40981853008270264,
+      "bbox": [
+        1011,
+        560,
+        1136,
+        645
+      ],
+      "bbox_height": 85.0,
+      "bbox_area": 10625.0,
+      "estimated_distance_m": 0.4644444444444446,
+      "keep": true,
+      "drop_reason": "",
+      "roi_inside": true
+    },
+    {
+      "index": 13,
+      "class_id": 14,
+      "class_name": "FAKE_9",
+      "confidence": 0.29943037033081055,
+      "bbox": [
+        1578,
+        253,
+        1633,
+        390
+      ],
+      "bbox_height": 137.0,
+      "bbox_area": 7535.0,
+      "estimated_distance_m": 0.9229885057471267,
+      "keep": false,
+      "drop_reason": "outside_roi",
+      "roi_inside": false
+    }
+  ],
+  "clusters": [
+    {
+      "cluster_id": 0,
+      "symbol_indices": [
+        0
+      ],
+      "class_names": [
+        "FAKE_9"
+      ],
+      "group_type": "FAKE",
+      "ambiguous": false,
+      "ambiguous_reason": "",
+      "union_bbox": [
+        665,
+        288,
+        721,
+        376
+      ],
+      "expanded_bbox": [
+        643,
+        253,
+        743,
+        411
+      ],
+      "hsv_mask_mode": "red_or_blue_or_dark_blue",
+      "color_mask_coverage": 0.6686708860759494,
+      "debug_white_mask_coverage": 0.26962025316455696,
+      "refined_bbox": [
+        643,
+        275,
+        743,
+        411
+      ],
+      "refined_bbox_source": "color_contour",
+      "refined_bbox_fallback_reason": "",
+      "merged_from": [
+        0
+      ],
+      "is_merged_cluster": false
+    },
+    {
+      "cluster_id": 1,
+      "symbol_indices": [
+        2,
+        12
+      ],
+      "class_names": [
+        "R1",
+        "R1"
+      ],
+      "group_type": "R1",
+      "ambiguous": false,
+      "ambiguous_reason": "",
+      "union_bbox": [
+        935,
+        560,
+        1191,
+        872
+      ],
+      "expanded_bbox": [
+        833,
+        435,
+        1293,
+        997
+      ],
+      "hsv_mask_mode": "red_or_blue_or_dark_blue",
+      "color_mask_coverage": 0.5720795296302027,
+      "debug_white_mask_coverage": 0.1813863530868018,
+      "refined_bbox": [
+        896,
+        547,
+        1244,
+        997
+      ],
+      "refined_bbox_source": "color_contour",
+      "refined_bbox_fallback_reason": "",
+      "merged_from": [
+        1,
+        7
+      ],
+      "is_merged_cluster": true
+    },
+    {
+      "cluster_id": 2,
+      "symbol_indices": [
+        4,
+        9,
+        11
+      ],
+      "class_names": [
+        "REAL_15",
+        "REAL_1",
+        "REAL_5"
+      ],
+      "group_type": "REAL",
+      "ambiguous": false,
+      "ambiguous_reason": "",
+      "union_bbox": [
+        1019,
+        229,
+        1121,
+        484
+      ],
+      "expanded_bbox": [
+        978,
+        127,
+        1162,
+        586
+      ],
+      "hsv_mask_mode": "red_or_blue_or_dark_blue",
+      "color_mask_coverage": 0.5963697073032111,
+      "debug_white_mask_coverage": 0.32554229421237096,
+      "refined_bbox": [
+        978,
+        151,
+        1162,
+        509
+      ],
+      "refined_bbox_source": "color_contour",
+      "refined_bbox_fallback_reason": "",
+      "merged_from": [
+        2,
+        6
+      ],
+      "is_merged_cluster": true
+    },
+    {
+      "cluster_id": 3,
+      "symbol_indices": [
+        5
+      ],
+      "class_names": [
+        "REAL_9"
+      ],
+      "group_type": "REAL",
+      "ambiguous": false,
+      "ambiguous_reason": "",
+      "union_bbox": [
+        0,
+        456,
+        72,
+        682
+      ],
+      "expanded_bbox": [
+        0,
+        366,
+        101,
+        772
+      ],
+      "hsv_mask_mode": "red_or_blue_or_dark_blue",
+      "color_mask_coverage": 0.889894161829976,
+      "debug_white_mask_coverage": 0.13771155440667218,
+      "refined_bbox": [
+        0,
+        366,
+        101,
+        735
+      ],
+      "refined_bbox_source": "color_contour",
+      "refined_bbox_fallback_reason": "",
+      "merged_from": [
+        3
+      ],
+      "is_merged_cluster": false
+    },
+    {
+      "cluster_id": 4,
+      "symbol_indices": [
+        6
+      ],
+      "class_names": [
+        "REAL_14"
+      ],
+      "group_type": "REAL",
+      "ambiguous": false,
+      "ambiguous_reason": "",
+      "union_bbox": [
+        455,
+        428,
+        584,
+        542
+      ],
+      "expanded_bbox": [
+        403,
+        382,
+        636,
+        588
+      ],
+      "hsv_mask_mode": "red_or_blue_or_dark_blue",
+      "color_mask_coverage": 0.5987332805533564,
+      "debug_white_mask_coverage": 0.4055377307387808,
+      "refined_bbox": [
+        403,
+        390,
+        636,
+        550
+      ],
+      "refined_bbox_source": "color_contour",
+      "refined_bbox_fallback_reason": "",
+      "merged_from": [
+        4
+      ],
+      "is_merged_cluster": false
+    },
+    {
+      "cluster_id": 5,
+      "symbol_indices": [
+        8
+      ],
+      "class_names": [
+        "REAL_9"
+      ],
+      "group_type": "REAL",
+      "ambiguous": false,
+      "ambiguous_reason": "",
+      "union_bbox": [
+        227,
+        425,
+        300,
+        648
+      ],
+      "expanded_bbox": [
+        198,
+        336,
+        329,
+        737
+      ],
+      "hsv_mask_mode": "red_or_blue_or_dark_blue",
+      "color_mask_coverage": 0.6684433953284727,
+      "debug_white_mask_coverage": 0.2411338067046125,
+      "refined_bbox": [
+        198,
+        342,
+        329,
+        719
+      ],
+      "refined_bbox_source": "color_contour",
+      "refined_bbox_fallback_reason": "",
+      "merged_from": [
+        5
+      ],
+      "is_merged_cluster": false
+    }
+  ],
+  "merge_steps": [
+    {
+      "before_cluster_ids": [
+        2,
+        6
+      ],
+      "after_cluster_id": 2,
+      "symbol_indices": [
+        4,
+        9,
+        11
+      ],
+      "reason": "same_group REAL, gap=0.0px, compact w=1.00 h=1.93, color ok",
+      "metrics": {
+        "iou": 0.1212640862322391,
+        "intersection_over_min_area": 0.3416149068322981,
+        "gap_px": 0.0,
+        "center_distance_px": 144.8456074584245,
+        "distance_diff_m": 0.3797876433823145,
+        "width_scale": 1.0,
+        "height_scale": 1.9318181818181819,
+        "compactness_pass": true,
+        "strong_spatial_pass": true,
+        "center_distance_only_used": false
+      }
+    },
+    {
+      "before_cluster_ids": [
+        1,
+        7
+      ],
+      "after_cluster_id": 1,
+      "symbol_indices": [
+        2,
+        12
+      ],
+      "reason": "same_group R1, gap=7.0px, compact w=1.00 h=2.35, color ok",
+      "metrics": {
+        "iou": 0.0,
+        "intersection_over_min_area": 0.0,
+        "gap_px": 7.0,
+        "center_distance_px": 203.27137034024244,
+        "distance_diff_m": 0.2626692965154505,
+        "width_scale": 1.0,
+        "height_scale": 2.345864661654135,
+        "compactness_pass": true,
+        "strong_spatial_pass": true,
+        "center_distance_only_used": false
+      }
+    }
+  ]
+}

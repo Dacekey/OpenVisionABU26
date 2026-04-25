@@ -1,0 +1,526 @@
+{
+  "image": "/home/dacekey/openvision_ros2_ws_v2/src/abu_yolo_ros/tools/data_test/test_images/16.png",
+  "model": "models/fptu_abu26_detect_yolo_v1.onnx",
+  "team_color": "blue",
+  "config_path": "/home/dacekey/openvision_ros2_ws_v2/src/abu_yolo_ros/tools/config/kfs_instance_prototype.yaml",
+  "config_used": {
+    "range_filter": {
+      "mode": "bbox_size",
+      "min_symbol_height_px": 60,
+      "min_symbol_area_px": 4000,
+      "min_confidence": 0.25,
+      "max_distance_m": 1.0,
+      "min_distance_m": 0.2
+    },
+    "clustering": {
+      "cluster_distance_scale": 2.5,
+      "min_cluster_distance_px": 35,
+      "max_cluster_distance_px": 180,
+      "max_depth_diff_m": 0.25,
+      "max_symbols_per_instance": 3,
+      "min_height_similarity_for_grouping": 0.6,
+      "min_area_similarity_for_grouping": 0.3,
+      "max_bottom_y_diff_ratio": 1.2
+    },
+    "bbox": {
+      "expand_scale": 1.6,
+      "expand_scale_x": 1.8,
+      "expand_scale_y": 1.8,
+      "max_expanded_area_ratio": 0.25
+    },
+    "roi_filter": {
+      "enabled": true,
+      "preset": "none",
+      "mode": "normalized_box",
+      "x_min_norm": 0.0,
+      "x_max_norm": 0.78,
+      "y_min_norm": 0.22,
+      "y_max_norm": 1.0,
+      "polygon": []
+    },
+    "hsv_mask": {
+      "mode": "red_or_blue_or_dark_blue",
+      "red_h_low_1": 0,
+      "red_h_high_1": 12,
+      "red_h_low_2": 168,
+      "red_h_high_2": 180,
+      "red_s_low": 130,
+      "red_v_low": 80,
+      "blue_h_low": 90,
+      "blue_h_high": 140,
+      "blue_s_low": 40,
+      "blue_v_low": 80,
+      "dark_blue_h_low": 90,
+      "dark_blue_h_high": 140,
+      "dark_blue_s_low": 20,
+      "dark_blue_v_low": 15,
+      "dark_blue_v_high": 160
+    },
+    "contour": {
+      "enabled": true,
+      "min_contour_area_px": 300,
+      "morphology_kernel_size": 5,
+      "morphology_iterations": 1,
+      "selection": "closest_to_symbol_union_center",
+      "max_center_offset_ratio": 1.0,
+      "min_refined_to_union_area_ratio": 0.5
+    },
+    "debug_white_mask": {
+      "enabled": true,
+      "s_high": 80,
+      "v_low": 150,
+      "debug_only": true
+    }
+  },
+  "range_mode": "bbox_size",
+  "roi_filter": {
+    "enabled": true,
+    "preset": "none",
+    "mode": "normalized_box",
+    "x_min_norm": 0.0,
+    "x_max_norm": 0.78,
+    "y_min_norm": 0.22,
+    "y_max_norm": 1.0,
+    "polygon": []
+  },
+  "bbox_expand": {
+    "expand_scale": 1.6,
+    "expand_scale_x": 1.8,
+    "expand_scale_y": 1.8
+  },
+  "contour_selection": "closest_to_symbol_union_center",
+  "symbols": [
+    {
+      "index": 0,
+      "class_id": 30,
+      "class_name": "REAL_9",
+      "confidence": 0.9412179589271545,
+      "bbox": [
+        135,
+        302,
+        229,
+        469
+      ],
+      "bbox_height": 167.0,
+      "bbox_area": 15698.0,
+      "estimated_distance_m": 0.7545837723919918,
+      "keep": true,
+      "drop_reason": "",
+      "roi_inside": true
+    },
+    {
+      "index": 1,
+      "class_id": 15,
+      "class_name": "R1",
+      "confidence": 0.9070990681648254,
+      "bbox": [
+        851,
+        477,
+        1013,
+        567
+      ],
+      "bbox_height": 90.0,
+      "bbox_area": 14580.0,
+      "estimated_distance_m": 0.5809933142311365,
+      "keep": true,
+      "drop_reason": "",
+      "roi_inside": true
+    },
+    {
+      "index": 2,
+      "class_id": 17,
+      "class_name": "REAL_10",
+      "confidence": 0.8760246634483337,
+      "bbox": [
+        1503,
+        305,
+        1576,
+        448
+      ],
+      "bbox_height": 143.0,
+      "bbox_area": 10439.0,
+      "estimated_distance_m": 0.796551724137931,
+      "keep": false,
+      "drop_reason": "outside_roi",
+      "roi_inside": false
+    },
+    {
+      "index": 3,
+      "class_id": 21,
+      "class_name": "REAL_14",
+      "confidence": 0.8220772743225098,
+      "bbox": [
+        433,
+        324,
+        540,
+        403
+      ],
+      "bbox_height": 79.0,
+      "bbox_area": 8453.0,
+      "estimated_distance_m": 0.8932049830124575,
+      "keep": true,
+      "drop_reason": "",
+      "roi_inside": true
+    },
+    {
+      "index": 4,
+      "class_id": 17,
+      "class_name": "REAL_10",
+      "confidence": 0.8139716386795044,
+      "bbox": [
+        1617,
+        328,
+        1789,
+        486
+      ],
+      "bbox_height": 158.0,
+      "bbox_area": 27176.0,
+      "estimated_distance_m": 0.7219461697722569,
+      "keep": false,
+      "drop_reason": "outside_roi",
+      "roi_inside": false
+    },
+    {
+      "index": 5,
+      "class_id": 5,
+      "class_name": "FAKE_14",
+      "confidence": 0.8062072396278381,
+      "bbox": [
+        1391,
+        171,
+        1472,
+        285
+      ],
+      "bbox_height": 114.0,
+      "bbox_area": 9234.0,
+      "estimated_distance_m": 1.200653594771242,
+      "keep": false,
+      "drop_reason": "outside_roi",
+      "roi_inside": false
+    },
+    {
+      "index": 6,
+      "class_id": 14,
+      "class_name": "FAKE_9",
+      "confidence": 0.7760813236236572,
+      "bbox": [
+        588,
+        218,
+        636,
+        294
+      ],
+      "bbox_height": 76.0,
+      "bbox_area": 3648.0,
+      "estimated_distance_m": 1.1739018087855297,
+      "keep": false,
+      "drop_reason": "bbox_area 3648.0 < min_symbol_area_px 4000",
+      "roi_inside": null
+    },
+    {
+      "index": 7,
+      "class_id": 12,
+      "class_name": "FAKE_7",
+      "confidence": 0.7746449708938599,
+      "bbox": [
+        1761,
+        135,
+        1825,
+        226
+      ],
+      "bbox_height": 91.0,
+      "bbox_area": 5824.0,
+      "estimated_distance_m": 1.3929178470254961,
+      "keep": false,
+      "drop_reason": "outside_roi",
+      "roi_inside": false
+    },
+    {
+      "index": 8,
+      "class_id": 22,
+      "class_name": "REAL_15",
+      "confidence": 0.6557639241218567,
+      "bbox": [
+        923,
+        164,
+        979,
+        229
+      ],
+      "bbox_height": 65.0,
+      "bbox_area": 3640.0,
+      "estimated_distance_m": 1.3823695345557125,
+      "keep": false,
+      "drop_reason": "bbox_area 3640.0 < min_symbol_area_px 4000",
+      "roi_inside": null
+    },
+    {
+      "index": 9,
+      "class_id": 16,
+      "class_name": "REAL_1",
+      "confidence": 0.6426423192024231,
+      "bbox": [
+        902,
+        252,
+        980,
+        360
+      ],
+      "bbox_height": 108.0,
+      "bbox_area": 8424.0,
+      "estimated_distance_m": 0.9952380952380955,
+      "keep": true,
+      "drop_reason": "",
+      "roi_inside": true
+    },
+    {
+      "index": 10,
+      "class_id": 0,
+      "class_name": "FAKE_1",
+      "confidence": 0.6277253031730652,
+      "bbox": [
+        1493,
+        47,
+        1542,
+        119
+      ],
+      "bbox_height": 72.0,
+      "bbox_area": 3528.0,
+      "estimated_distance_m": 1.8382303839732888,
+      "keep": false,
+      "drop_reason": "bbox_area 3528.0 < min_symbol_area_px 4000",
+      "roi_inside": null
+    },
+    {
+      "index": 11,
+      "class_id": 30,
+      "class_name": "REAL_9",
+      "confidence": 0.5754433274269104,
+      "bbox": [
+        330,
+        288,
+        371,
+        452
+      ],
+      "bbox_height": 164.0,
+      "bbox_area": 6724.0,
+      "estimated_distance_m": 0.7884120171673821,
+      "keep": true,
+      "drop_reason": "",
+      "roi_inside": true
+    },
+    {
+      "index": 12,
+      "class_id": 0,
+      "class_name": "FAKE_1",
+      "confidence": 0.5294280052185059,
+      "bbox": [
+        1787,
+        15,
+        1854,
+        112
+      ],
+      "bbox_height": 97.0,
+      "bbox_area": 6499.0,
+      "estimated_distance_m": 1.8729729729729734,
+      "keep": false,
+      "drop_reason": "outside_roi",
+      "roi_inside": false
+    },
+    {
+      "index": 13,
+      "class_id": 15,
+      "class_name": "R1",
+      "confidence": 0.46455854177474976,
+      "bbox": [
+        895,
+        379,
+        994,
+        415
+      ],
+      "bbox_height": 36.0,
+      "bbox_area": 3564.0,
+      "estimated_distance_m": 0.8664804469273746,
+      "keep": false,
+      "drop_reason": "bbox_height 36.0 < min_symbol_height_px 60; bbox_area 3564.0 < min_symbol_area_px 4000",
+      "roi_inside": null
+    },
+    {
+      "index": 14,
+      "class_id": 22,
+      "class_name": "REAL_15",
+      "confidence": 0.3466188311576843,
+      "bbox": [
+        1235,
+        136,
+        1267,
+        188
+      ],
+      "bbox_height": 52.0,
+      "bbox_area": 1664.0,
+      "estimated_distance_m": 1.534730538922156,
+      "keep": false,
+      "drop_reason": "bbox_height 52.0 < min_symbol_height_px 60; bbox_area 1664.0 < min_symbol_area_px 4000",
+      "roi_inside": null
+    },
+    {
+      "index": 15,
+      "class_id": 24,
+      "class_name": "REAL_3",
+      "confidence": 0.33543527126312256,
+      "bbox": [
+        1368,
+        69,
+        1402,
+        125
+      ],
+      "bbox_height": 56.0,
+      "bbox_area": 1904.0,
+      "estimated_distance_m": 1.8090909090909093,
+      "keep": false,
+      "drop_reason": "bbox_height 56.0 < min_symbol_height_px 60; bbox_area 1904.0 < min_symbol_area_px 4000",
+      "roi_inside": null
+    }
+  ],
+  "clusters": [
+    {
+      "cluster_id": 0,
+      "symbol_indices": [
+        0,
+        11
+      ],
+      "class_names": [
+        "REAL_9",
+        "REAL_9"
+      ],
+      "group_type": "REAL",
+      "ambiguous": false,
+      "ambiguous_reason": "",
+      "union_bbox": [
+        135,
+        288,
+        371,
+        469
+      ],
+      "expanded_bbox": [
+        41,
+        216,
+        465,
+        541
+      ],
+      "hsv_mask_mode": "red_or_blue_or_dark_blue",
+      "color_mask_coverage": 0.6320682148040638,
+      "debug_white_mask_coverage": 0.19474600870827286,
+      "refined_bbox": [
+        41,
+        216,
+        428,
+        502
+      ],
+      "refined_bbox_source": "color_contour",
+      "refined_bbox_fallback_reason": ""
+    },
+    {
+      "cluster_id": 1,
+      "symbol_indices": [
+        1
+      ],
+      "class_names": [
+        "R1"
+      ],
+      "group_type": "R1",
+      "ambiguous": false,
+      "ambiguous_reason": "",
+      "union_bbox": [
+        851,
+        477,
+        1013,
+        567
+      ],
+      "expanded_bbox": [
+        786,
+        441,
+        1078,
+        603
+      ],
+      "hsv_mask_mode": "red_or_blue_or_dark_blue",
+      "color_mask_coverage": 0.7452223913411128,
+      "debug_white_mask_coverage": 0.13142651784204296,
+      "refined_bbox": [
+        822,
+        441,
+        1046,
+        603
+      ],
+      "refined_bbox_source": "color_contour",
+      "refined_bbox_fallback_reason": ""
+    },
+    {
+      "cluster_id": 2,
+      "symbol_indices": [
+        3
+      ],
+      "class_names": [
+        "REAL_14"
+      ],
+      "group_type": "REAL",
+      "ambiguous": false,
+      "ambiguous_reason": "",
+      "union_bbox": [
+        433,
+        324,
+        540,
+        403
+      ],
+      "expanded_bbox": [
+        390,
+        292,
+        583,
+        435
+      ],
+      "hsv_mask_mode": "red_or_blue_or_dark_blue",
+      "color_mask_coverage": 0.6000942063118229,
+      "debug_white_mask_coverage": 0.40066669082213124,
+      "refined_bbox": [
+        404,
+        292,
+        583,
+        407
+      ],
+      "refined_bbox_source": "color_contour",
+      "refined_bbox_fallback_reason": ""
+    },
+    {
+      "cluster_id": 3,
+      "symbol_indices": [
+        9
+      ],
+      "class_names": [
+        "REAL_1"
+      ],
+      "group_type": "REAL",
+      "ambiguous": false,
+      "ambiguous_reason": "",
+      "union_bbox": [
+        902,
+        252,
+        980,
+        360
+      ],
+      "expanded_bbox": [
+        871,
+        209,
+        1011,
+        403
+      ],
+      "hsv_mask_mode": "red_or_blue_or_dark_blue",
+      "color_mask_coverage": 0.8163107511045655,
+      "debug_white_mask_coverage": 0.29826951399116347,
+      "refined_bbox": [
+        871,
+        209,
+        1011,
+        403
+      ],
+      "refined_bbox_source": "color_contour",
+      "refined_bbox_fallback_reason": ""
+    }
+  ]
+}

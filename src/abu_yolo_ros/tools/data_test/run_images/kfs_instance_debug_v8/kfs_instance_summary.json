@@ -1,0 +1,257 @@
+{
+  "image": "/home/dacekey/openvision_ros2_ws_v2/src/abu_yolo_ros/tools/data_test/test_images/8.png",
+  "model": "models/fptu_abu26_detect_yolo_v1.onnx",
+  "team_color": "red",
+  "config_path": "/home/dacekey/openvision_ros2_ws_v2/src/abu_yolo_ros/tools/config/kfs_instance_prototype.yaml",
+  "config_used": {
+    "range_filter": {
+      "mode": "bbox_size",
+      "min_symbol_height_px": 60,
+      "min_symbol_area_px": 4000,
+      "min_confidence": 0.25,
+      "max_distance_m": 1.0,
+      "min_distance_m": 0.2
+    },
+    "clustering": {
+      "cluster_distance_scale": 2.5,
+      "min_cluster_distance_px": 35,
+      "max_cluster_distance_px": 180,
+      "max_depth_diff_m": 0.25,
+      "max_symbols_per_instance": 3,
+      "min_height_similarity_for_grouping": 0.6,
+      "min_area_similarity_for_grouping": 0.3,
+      "max_bottom_y_diff_ratio": 1.2
+    },
+    "bbox": {
+      "expand_scale": 1.6,
+      "expand_scale_x": 1.8,
+      "expand_scale_y": 1.8,
+      "max_expanded_area_ratio": 0.25
+    },
+    "roi_filter": {
+      "enabled": true,
+      "preset": "center_working_area",
+      "mode": "normalized_box",
+      "x_min_norm": 0.1,
+      "x_max_norm": 0.78,
+      "y_min_norm": 0.22,
+      "y_max_norm": 1.0,
+      "polygon": []
+    },
+    "hsv_mask": {
+      "mode": "red_or_blue_or_dark_blue",
+      "red_h_low_1": 0,
+      "red_h_high_1": 12,
+      "red_h_low_2": 168,
+      "red_h_high_2": 180,
+      "red_s_low": 130,
+      "red_v_low": 80,
+      "blue_h_low": 90,
+      "blue_h_high": 140,
+      "blue_s_low": 40,
+      "blue_v_low": 80,
+      "dark_blue_h_low": 90,
+      "dark_blue_h_high": 140,
+      "dark_blue_s_low": 20,
+      "dark_blue_v_low": 15,
+      "dark_blue_v_high": 160
+    },
+    "contour": {
+      "enabled": true,
+      "min_contour_area_px": 300,
+      "morphology_kernel_size": 5,
+      "morphology_iterations": 1,
+      "selection": "closest_to_symbol_union_center",
+      "max_center_offset_ratio": 1.0,
+      "min_refined_to_union_area_ratio": 0.5
+    },
+    "debug_white_mask": {
+      "enabled": true,
+      "s_high": 80,
+      "v_low": 150,
+      "debug_only": true
+    }
+  },
+  "range_mode": "bbox_size",
+  "roi_filter": {
+    "enabled": true,
+    "preset": "center_working_area",
+    "mode": "normalized_box",
+    "x_min_norm": 0.1,
+    "x_max_norm": 0.78,
+    "y_min_norm": 0.22,
+    "y_max_norm": 1.0,
+    "polygon": []
+  },
+  "bbox_expand": {
+    "expand_scale": 1.6,
+    "expand_scale_x": 1.8,
+    "expand_scale_y": 1.8
+  },
+  "contour_selection": "closest_to_symbol_union_center",
+  "symbols": [
+    {
+      "index": 0,
+      "class_id": 3,
+      "class_name": "FAKE_12",
+      "confidence": 0.9273180365562439,
+      "bbox": [
+        1270,
+        65,
+        1609,
+        585
+      ],
+      "bbox_height": 520.0,
+      "bbox_area": 176280.0,
+      "estimated_distance_m": 0.5525821596244131,
+      "keep": true,
+      "drop_reason": "",
+      "roi_inside": true
+    },
+    {
+      "index": 1,
+      "class_id": 18,
+      "class_name": "REAL_11",
+      "confidence": 0.9211329817771912,
+      "bbox": [
+        376,
+        102,
+        482,
+        267
+      ],
+      "bbox_height": 165.0,
+      "bbox_area": 17490.0,
+      "estimated_distance_m": 1.256091030789826,
+      "keep": false,
+      "drop_reason": "outside_roi",
+      "roi_inside": false
+    },
+    {
+      "index": 2,
+      "class_id": 5,
+      "class_name": "FAKE_14",
+      "confidence": 0.9074074625968933,
+      "bbox": [
+        655,
+        1,
+        768,
+        73
+      ],
+      "bbox_height": 72.0,
+      "bbox_area": 8136.0,
+      "estimated_distance_m": 2.0826401446654614,
+      "keep": false,
+      "drop_reason": "outside_roi",
+      "roi_inside": false
+    },
+    {
+      "index": 3,
+      "class_id": 27,
+      "class_name": "REAL_6",
+      "confidence": 0.8973314762115479,
+      "bbox": [
+        569,
+        87,
+        621,
+        260
+      ],
+      "bbox_height": 173.0,
+      "bbox_area": 8996.0,
+      "estimated_distance_m": 1.2783783783783784,
+      "keep": false,
+      "drop_reason": "outside_roi",
+      "roi_inside": false
+    },
+    {
+      "index": 4,
+      "class_id": 28,
+      "class_name": "REAL_7",
+      "confidence": 0.87970370054245,
+      "bbox": [
+        45,
+        364,
+        140,
+        649
+      ],
+      "bbox_height": 285.0,
+      "bbox_area": 27075.0,
+      "estimated_distance_m": 0.45890168290522587,
+      "keep": false,
+      "drop_reason": "outside_roi",
+      "roi_inside": false
+    },
+    {
+      "index": 5,
+      "class_id": 6,
+      "class_name": "FAKE_15",
+      "confidence": 0.5125157833099365,
+      "bbox": [
+        560,
+        0,
+        601,
+        50
+      ],
+      "bbox_height": 50.0,
+      "bbox_area": 2050.0,
+      "estimated_distance_m": 2.220754716981132,
+      "keep": false,
+      "drop_reason": "bbox_height 50.0 < min_symbol_height_px 60; bbox_area 2050.0 < min_symbol_area_px 4000",
+      "roi_inside": null
+    },
+    {
+      "index": 6,
+      "class_id": 15,
+      "class_name": "R1",
+      "confidence": 0.4690578579902649,
+      "bbox": [
+        480,
+        1,
+        534,
+        47
+      ],
+      "bbox_height": 46.0,
+      "bbox_area": 2484.0,
+      "estimated_distance_m": 2.2396584440227705,
+      "keep": false,
+      "drop_reason": "bbox_height 46.0 < min_symbol_height_px 60; bbox_area 2484.0 < min_symbol_area_px 4000",
+      "roi_inside": null
+    }
+  ],
+  "clusters": [
+    {
+      "cluster_id": 0,
+      "symbol_indices": [
+        0
+      ],
+      "class_names": [
+        "FAKE_12"
+      ],
+      "group_type": "FAKE",
+      "ambiguous": false,
+      "ambiguous_reason": "",
+      "union_bbox": [
+        1270,
+        65,
+        1609,
+        585
+      ],
+      "expanded_bbox": [
+        1134,
+        0,
+        1745,
+        793
+      ],
+      "hsv_mask_mode": "red_or_blue_or_dark_blue",
+      "color_mask_coverage": 0.5876356746738545,
+      "debug_white_mask_coverage": 0.18485603366610048,
+      "refined_bbox": [
+        1154,
+        8,
+        1725,
+        637
+      ],
+      "refined_bbox_source": "color_contour",
+      "refined_bbox_fallback_reason": ""
+    }
+  ]
+}

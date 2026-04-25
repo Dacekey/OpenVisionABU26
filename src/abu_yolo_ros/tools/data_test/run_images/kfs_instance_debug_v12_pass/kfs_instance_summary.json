@@ -1,0 +1,260 @@
+{
+  "image": "/home/dacekey/openvision_ros2_ws_v2/src/abu_yolo_ros/tools/data_test/test_images/12.png",
+  "model": "models/fptu_abu26_detect_yolo_v1.onnx",
+  "team_color": "red",
+  "config_path": "/home/dacekey/openvision_ros2_ws_v2/src/abu_yolo_ros/tools/config/kfs_instance_prototype.yaml",
+  "config_used": {
+    "range_filter": {
+      "mode": "bbox_size",
+      "min_symbol_height_px": 60,
+      "min_symbol_area_px": 4000,
+      "min_confidence": 0.25,
+      "max_distance_m": 1.0,
+      "min_distance_m": 0.2
+    },
+    "clustering": {
+      "cluster_distance_scale": 2.5,
+      "min_cluster_distance_px": 35,
+      "max_cluster_distance_px": 180,
+      "max_depth_diff_m": 0.25,
+      "max_symbols_per_instance": 3,
+      "min_height_similarity_for_grouping": 0.6,
+      "min_area_similarity_for_grouping": 0.3,
+      "max_bottom_y_diff_ratio": 1.2
+    },
+    "cluster_merge": {
+      "enabled": true,
+      "merge_same_group_only": true,
+      "max_symbols_after_merge": 3,
+      "min_expanded_iou": 0.01,
+      "min_expanded_intersection_over_min_area": 0.05,
+      "max_expanded_gap_px": 140,
+      "max_union_center_distance_px": 550,
+      "min_color_mask_coverage_for_merge": 0.15,
+      "use_distance_check": false,
+      "max_distance_diff_m": 0.35
+    },
+    "bbox": {
+      "expand_scale": 1.6,
+      "expand_scale_x": 1.8,
+      "expand_scale_y": 1.8,
+      "max_expanded_area_ratio": 0.25
+    },
+    "roi_filter": {
+      "enabled": true,
+      "preset": "none",
+      "mode": "normalized_box",
+      "x_min_norm": 0.0,
+      "x_max_norm": 0.78,
+      "y_min_norm": 0.22,
+      "y_max_norm": 1.0,
+      "polygon": []
+    },
+    "hsv_mask": {
+      "mode": "red_or_blue_or_dark_blue",
+      "red_h_low_1": 0,
+      "red_h_high_1": 12,
+      "red_h_low_2": 168,
+      "red_h_high_2": 180,
+      "red_s_low": 130,
+      "red_v_low": 80,
+      "blue_h_low": 90,
+      "blue_h_high": 140,
+      "blue_s_low": 40,
+      "blue_v_low": 80,
+      "dark_blue_h_low": 90,
+      "dark_blue_h_high": 140,
+      "dark_blue_s_low": 20,
+      "dark_blue_v_low": 15,
+      "dark_blue_v_high": 160
+    },
+    "contour": {
+      "enabled": true,
+      "min_contour_area_px": 300,
+      "morphology_kernel_size": 5,
+      "morphology_iterations": 1,
+      "selection": "closest_to_symbol_union_center",
+      "max_center_offset_ratio": 1.0,
+      "min_refined_to_union_area_ratio": 0.5
+    },
+    "debug_white_mask": {
+      "enabled": true,
+      "s_high": 80,
+      "v_low": 150,
+      "debug_only": true
+    }
+  },
+  "range_mode": "bbox_size",
+  "roi_filter": {
+    "enabled": true,
+    "preset": "none",
+    "mode": "normalized_box",
+    "x_min_norm": 0.0,
+    "x_max_norm": 0.78,
+    "y_min_norm": 0.22,
+    "y_max_norm": 1.0,
+    "polygon": []
+  },
+  "cluster_merge": {
+    "enabled": true,
+    "merge_same_group_only": true,
+    "max_symbols_after_merge": 3,
+    "min_expanded_iou": 0.01,
+    "min_expanded_intersection_over_min_area": 0.05,
+    "max_expanded_gap_px": 140,
+    "max_union_center_distance_px": 550,
+    "min_color_mask_coverage_for_merge": 0.15,
+    "use_distance_check": false,
+    "max_distance_diff_m": 0.35
+  },
+  "bbox_expand": {
+    "expand_scale": 1.6,
+    "expand_scale_x": 1.8,
+    "expand_scale_y": 1.8
+  },
+  "contour_selection": "closest_to_symbol_union_center",
+  "symbols": [
+    {
+      "index": 0,
+      "class_id": 11,
+      "class_name": "FAKE_6",
+      "confidence": 0.9322915077209473,
+      "bbox": [
+        538,
+        271,
+        707,
+        350
+      ],
+      "bbox_height": 79.0,
+      "bbox_area": 13351.0,
+      "estimated_distance_m": 1.0204819277108435,
+      "keep": true,
+      "drop_reason": "",
+      "roi_inside": true
+    },
+    {
+      "index": 1,
+      "class_id": 2,
+      "class_name": "FAKE_11",
+      "confidence": 0.9316571354866028,
+      "bbox": [
+        463,
+        366,
+        531,
+        600
+      ],
+      "bbox_height": 234.0,
+      "bbox_area": 15912.0,
+      "estimated_distance_m": 0.5296296296296297,
+      "keep": true,
+      "drop_reason": "",
+      "roi_inside": true
+    },
+    {
+      "index": 2,
+      "class_id": 3,
+      "class_name": "FAKE_12",
+      "confidence": 0.9248052835464478,
+      "bbox": [
+        638,
+        387,
+        771,
+        617
+      ],
+      "bbox_height": 230.0,
+      "bbox_area": 30590.0,
+      "estimated_distance_m": 0.5043755697356427,
+      "keep": true,
+      "drop_reason": "",
+      "roi_inside": true
+    }
+  ],
+  "clusters": [
+    {
+      "cluster_id": 0,
+      "symbol_indices": [
+        0,
+        1,
+        2
+      ],
+      "class_names": [
+        "FAKE_6",
+        "FAKE_12",
+        "FAKE_11"
+      ],
+      "group_type": "FAKE",
+      "ambiguous": false,
+      "ambiguous_reason": "",
+      "union_bbox": [
+        463,
+        271,
+        771,
+        617
+      ],
+      "expanded_bbox": [
+        391,
+        190,
+        843,
+        698
+      ],
+      "hsv_mask_mode": "red_or_blue_or_dark_blue",
+      "color_mask_coverage": 0.40180126820430634,
+      "debug_white_mask_coverage": 0.4252970176294335,
+      "refined_bbox": [
+        442,
+        252,
+        833,
+        684
+      ],
+      "refined_bbox_source": "color_contour",
+      "refined_bbox_fallback_reason": "",
+      "merged_from": [
+        0,
+        1,
+        2
+      ],
+      "is_merged_cluster": true
+    }
+  ],
+  "merge_steps": [
+    {
+      "before_cluster_ids": [
+        0,
+        2
+      ],
+      "after_cluster_id": 0,
+      "symbol_indices": [
+        0,
+        2
+      ],
+      "reason": "same_group FAKE, gap=0.0px, color ok",
+      "metrics": {
+        "iou": 0.13115820710777507,
+        "intersection_over_min_area": 0.37899805112919865,
+        "gap_px": 0.0,
+        "center_distance_px": 208.31766607755569,
+        "distance_diff_m": 0.5161063579752008
+      }
+    },
+    {
+      "before_cluster_ids": [
+        0,
+        1
+      ],
+      "after_cluster_id": 0,
+      "symbol_indices": [
+        0,
+        1,
+        2
+      ],
+      "reason": "same_group FAKE, gap=0.0px, color ok",
+      "metrics": {
+        "iou": 0.18578927948477122,
+        "intersection_over_min_area": 0.860655737704918,
+        "gap_px": 0.0,
+        "center_distance_px": 162.25674100018156,
+        "distance_diff_m": 0.2327991190936134
+      }
+    }
+  ]
+}

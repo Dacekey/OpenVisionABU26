@@ -1,0 +1,85 @@
+range_filter:
+  mode: "bbox_size"
+  min_symbol_height_px: 60
+  min_symbol_area_px: 4000
+  min_confidence: 0.25
+  max_distance_m: 1.0
+  min_distance_m: 0.2
+
+clustering:
+  cluster_distance_scale: 2.5
+  min_cluster_distance_px: 35
+  max_cluster_distance_px: 180
+  max_depth_diff_m: 0.25
+  max_symbols_per_instance: 3
+  min_height_similarity_for_grouping: 0.60
+  min_area_similarity_for_grouping: 0.30
+  max_bottom_y_diff_ratio: 1.2
+
+cluster_merge:
+  enabled: true
+  merge_same_group_only: true
+  max_symbols_after_merge: 3
+  min_expanded_iou: 0.03
+  min_expanded_intersection_over_min_area: 0.12
+  max_expanded_gap_px: 40
+  max_union_center_distance_px: 550
+  allow_center_distance_only_merge: false
+  min_color_mask_coverage_for_merge: 0.15
+  use_distance_check: false
+  max_distance_diff_m: 0.35
+  max_merged_union_width_scale: 2.2
+  max_merged_union_height_scale: 2.6
+
+bbox:
+  expand_scale: 1.6
+  expand_scale_x: 1.8
+  expand_scale_y: 1.8
+  max_expanded_area_ratio: 0.25
+
+roi_filter:
+  enabled: true
+  # preset: "center_working_area"
+  preset: "none"
+  mode: "normalized_box"
+  x_min_norm: 0.0
+  x_max_norm: 0.78
+  y_min_norm: 0.22
+  y_max_norm: 1.0
+  polygon: []
+
+hsv_mask:
+  mode: "red_or_blue_or_dark_blue"
+
+  red_h_low_1: 0
+  red_h_high_1: 12
+  red_h_low_2: 168
+  red_h_high_2: 180
+  red_s_low: 130
+  red_v_low: 80
+
+  blue_h_low: 90
+  blue_h_high: 140
+  blue_s_low: 40
+  blue_v_low: 80
+
+  dark_blue_h_low: 90
+  dark_blue_h_high: 140
+  dark_blue_s_low: 20
+  dark_blue_v_low: 15
+  dark_blue_v_high: 160
+
+contour:
+  enabled: true
+  min_contour_area_px: 300
+  morphology_kernel_size: 5
+  morphology_iterations: 1
+  selection: "closest_to_symbol_union_center"
+  max_center_offset_ratio: 1.0
+  min_refined_to_union_area_ratio: 0.5
+
+debug_white_mask:
+  enabled: true
+  s_high: 80
+  v_low: 150
+  debug_only: true
