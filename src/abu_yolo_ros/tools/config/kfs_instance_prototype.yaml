@@ -31,6 +31,25 @@ cluster_merge:
   max_merged_union_width_scale: 2.2
   max_merged_union_height_scale: 2.6
 
+merge:
+  low_mask_adjacent_same_group_fallback:
+    enabled: true
+    require_same_group_type: true
+    reject_ambiguous: true
+    reject_real_fake_mix: true
+    max_symbols_after_merge: 3
+    require_height_similarity: true
+    min_height_similarity: 0.55
+    require_bottom_y_consistency: true
+    max_bottom_y_diff_ratio: 1.35
+    require_small_gap: true
+    max_gap_px: 45
+    max_gap_ratio_to_symbol_height: 0.55
+    max_merged_aspect_ratio: 2.2
+    max_merged_width_scale: 2.2
+    max_merged_height_scale: 2.6
+    log_rejected_candidates: true
+
 bbox:
   use_square_symbol_bbox: true
   square_symbol_scale: 1.0

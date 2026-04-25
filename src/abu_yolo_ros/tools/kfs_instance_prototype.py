@@ -52,6 +52,26 @@ DEFAULT_CONFIG = {
         "max_merged_union_width_scale": 2.2,
         "max_merged_union_height_scale": 2.6,
     },
+    "merge": {
+        "low_mask_adjacent_same_group_fallback": {
+            "enabled": True,
+            "require_same_group_type": True,
+            "reject_ambiguous": True,
+            "reject_real_fake_mix": True,
+            "max_symbols_after_merge": 3,
+            "require_height_similarity": True,
+            "min_height_similarity": 0.55,
+            "require_bottom_y_consistency": True,
+            "max_bottom_y_diff_ratio": 1.35,
+            "require_small_gap": True,
+            "max_gap_px": 45,
+            "max_gap_ratio_to_symbol_height": 0.55,
+            "max_merged_aspect_ratio": 2.2,
+            "max_merged_width_scale": 2.2,
+            "max_merged_height_scale": 2.6,
+            "log_rejected_candidates": True,
+        },
+    },
     "bbox": {
         "use_square_symbol_bbox": True,
         "square_symbol_scale": 1.0,
@@ -181,6 +201,15 @@ class MergeStep:
     before_cluster_ids: List[int]
     after_cluster_id: int
     symbol_indices: List[int]
+    reason: str
+    metrics: Dict[str, Any]
+
+
+@dataclass
+class MergeDiagnostic:
+    cluster_ids: List[int]
+    accepted: bool
+    merge_method: str
     reason: str
     metrics: Dict[str, Any]
 
@@ -1256,7 +1285,123 @@ def merge_metrics(
         "compactness_pass": compactness_pass,
         "strong_spatial_pass": strong_spatial_pass,
         "center_distance_only_used": center_distance_only_used,
+        "merge_method": "normal",
+        "fallback_reason": "",
+        "fallback_checks": {},
+        "accepted": False,
     }
+
+
+def bbox_height(bbox: Tuple[int, int, int, int]) -> float:
+    return max(1.0, float(bbox[3] - bbox[1]))
+
+
+def bbox_bottom_y(bbox: Tuple[int, int, int, int]) -> float:
+    return float(bbox[3])
+
+
+def low_mask_fallback_candidate_allowed(
+    first: ClusterRecord,
+    second: ClusterRecord,
+    merged_symbols: Sequence[SymbolRecord],
+    config: dict,
+    normal_reason: str,
+    metrics: Dict[str, Any],
+) -> Tuple[bool, str, Dict[str, Any]]:
+    fallback_cfg = config.get("merge", {}).get("low_mask_adjacent_same_group_fallback", {})
+    fallback_metrics = dict(metrics)
+    fallback_metrics["merge_method"] = "low_mask_adjacent_same_group_fallback"
+
+    if not fallback_cfg.get("enabled", False):
+        fallback_metrics["fallback_reason"] = "fallback_disabled"
+        return False, "fallback_disabled", fallback_metrics
+
+    if normal_reason not in ("first_cluster_color_mask_too_low", "second_cluster_color_mask_too_low"):
+        fallback_metrics["fallback_reason"] = "normal_rejection_not_weak_color_mask"
+        return False, "normal_rejection_not_weak_color_mask", fallback_metrics
+
+    total_symbols = len({symbol.index for symbol in merged_symbols})
+    if fallback_cfg.get("reject_ambiguous", True) and (first.ambiguous or second.ambiguous):
+        fallback_metrics["fallback_reason"] = "ambiguous_cluster_not_mergeable"
+        return False, "ambiguous_cluster_not_mergeable", fallback_metrics
+    if total_symbols > fallback_cfg.get("max_symbols_after_merge", 3):
+        fallback_metrics["fallback_reason"] = "too_many_symbols_after_merge"
+        return False, "too_many_symbols_after_merge", fallback_metrics
+    if fallback_cfg.get("require_same_group_type", True) and first.group_type != second.group_type:
+        fallback_metrics["fallback_reason"] = "fallback_requires_same_group_type"
+        return False, "fallback_requires_same_group_type", fallback_metrics
+    if fallback_cfg.get("reject_real_fake_mix", True):
+        pair = {first.group_type, second.group_type}
+        if "REAL" in pair and "FAKE" in pair:
+            fallback_metrics["fallback_reason"] = "real_fake_mix_rejected"
+            return False, "real_fake_mix_rejected", fallback_metrics
+
+    first_height = bbox_height(first.union_bbox)
+    second_height = bbox_height(second.union_bbox)
+    height_similarity = similarity_ratio(first_height, second_height)
+    avg_height = 0.5 * (first_height + second_height)
+    bottom_y_diff = abs(bbox_bottom_y(first.union_bbox) - bbox_bottom_y(second.union_bbox))
+    gap_limit = min(
+        float(fallback_cfg.get("max_gap_px", 45)),
+        float(fallback_cfg.get("max_gap_ratio_to_symbol_height", 0.55)) * avg_height,
+    )
+    merged_union = union_bbox(merged_symbols)
+    merged_union_width = max(1.0, float(merged_union[2] - merged_union[0]))
+    merged_union_height = max(1.0, float(merged_union[3] - merged_union[1]))
+    merged_aspect_ratio = max(
+        merged_union_width / merged_union_height,
+        merged_union_height / merged_union_width,
+    )
+
+    checks = {
+        "height_similarity": height_similarity,
+        "height_similarity_pass": (
+            (not fallback_cfg.get("require_height_similarity", True)) or
+            height_similarity >= float(fallback_cfg.get("min_height_similarity", 0.55))
+        ),
+        "bottom_y_diff": bottom_y_diff,
+        "bottom_y_consistency_pass": (
+            (not fallback_cfg.get("require_bottom_y_consistency", True)) or
+            bottom_y_diff <= float(fallback_cfg.get("max_bottom_y_diff_ratio", 1.35)) * avg_height
+        ),
+        "gap_px": metrics["gap_px"],
+        "gap_limit_px": gap_limit,
+        "small_gap_pass": (
+            (not fallback_cfg.get("require_small_gap", True)) or
+            metrics["gap_px"] <= gap_limit
+        ),
+        "merged_aspect_ratio": merged_aspect_ratio,
+        "merged_aspect_ratio_pass": merged_aspect_ratio <= float(
+            fallback_cfg.get("max_merged_aspect_ratio", 2.2)
+        ),
+        "width_scale": metrics["width_scale"],
+        "width_scale_pass": metrics["width_scale"] <= float(
+            fallback_cfg.get("max_merged_width_scale", 2.2)
+        ),
+        "height_scale": metrics["height_scale"],
+        "height_scale_pass": metrics["height_scale"] <= float(
+            fallback_cfg.get("max_merged_height_scale", 2.6)
+        ),
+    }
+    fallback_metrics["fallback_checks"] = checks
+
+    failed_checks = [
+        name for name, passed in checks.items()
+        if name.endswith("_pass") and not bool(passed)
+    ]
+    if failed_checks:
+        fallback_metrics["fallback_reason"] = ",".join(failed_checks)
+        return False, f"fallback_geometry_failed:{','.join(failed_checks)}", fallback_metrics
+
+    fallback_metrics["fallback_reason"] = "weak_color_mask_but_strong_geometry"
+    return (
+        True,
+        (
+            f"fallback_same_group {first.group_type}, weak_color_mask, "
+            f"gap={metrics['gap_px']:.1f}px, hsim={height_similarity:.2f}"
+        ),
+        fallback_metrics,
+    )
 
 
 def merge_candidate_allowed(
@@ -1270,7 +1415,6 @@ def merge_candidate_allowed(
     merged_symbols = list(first_symbols) + list(second_symbols)
     metrics = merge_metrics(first, second, merged_symbols, config)
     total_symbols = len(set(first.symbol_indices + second.symbol_indices))
-
     if not merge_cfg["enabled"]:
         return False, "cluster_merge_disabled", metrics
     if first.ambiguous or second.ambiguous:
@@ -1308,6 +1452,8 @@ def merge_candidate_allowed(
     if not spatial_ok:
         return False, "spatial_conditions_not_met", metrics
 
+    metrics["merge_method"] = "normal"
+    metrics["accepted"] = True
     return (
         True,
         (
@@ -1337,10 +1483,12 @@ def merge_clusters_second_stage(
     Dict[int, List[SymbolRecord]],
     List[Tuple[int, np.ndarray, np.ndarray, Optional[np.ndarray], Tuple[int, int, int, int], str]],
     List[MergeStep],
+    List[MergeDiagnostic],
 ]:
     active_clusters = {cluster.cluster_id: cluster for cluster in clusters}
     active_groupings = {cluster_id: list(group) for cluster_id, group in cluster_groupings.items()}
     merge_steps: List[MergeStep] = []
+    merge_diagnostics: List[MergeDiagnostic] = []
 
     if not config["cluster_merge"]["enabled"]:
         mask_debug: List[Tuple[int, np.ndarray, np.ndarray, Optional[np.ndarray], Tuple[int, int, int, int], str]] = []
@@ -1354,7 +1502,7 @@ def merge_clusters_second_stage(
                 merged_from=cluster.merged_from,
             )
             mask_debug.append(debug)
-        return list(clusters), active_groupings, mask_debug, merge_steps
+        return list(clusters), active_groupings, mask_debug, merge_steps, merge_diagnostics
 
     while True:
         best_pair = None
@@ -1374,30 +1522,74 @@ def merge_clusters_second_stage(
                     active_groupings[right_id],
                     config,
                 )
+                merged_symbols = active_groupings[left_id] + active_groupings[right_id]
+                final_allowed = allowed
+                final_reason = reason
+                final_metrics = metrics
+                if not allowed:
+                    fallback_allowed, fallback_reason, fallback_metrics = (
+                        low_mask_fallback_candidate_allowed(
+                            active_clusters[left_id],
+                            active_clusters[right_id],
+                            merged_symbols,
+                            config,
+                            reason,
+                            metrics,
+                        )
+                    )
+                    if fallback_allowed:
+                        final_allowed = True
+                        final_reason = fallback_reason
+                        final_metrics = fallback_metrics
+                        final_metrics["accepted"] = True
+                    else:
+                        final_metrics = fallback_metrics
+                        final_metrics["accepted"] = False
+                        log_rejected = (
+                            config.get("merge", {})
+                            .get("low_mask_adjacent_same_group_fallback", {})
+                            .get("log_rejected_candidates", True)
+                        )
+                        if log_rejected and final_metrics.get("merge_method") == "low_mask_adjacent_same_group_fallback":
+                            print(
+                                f"Fallback merge rejected C{left_id}+C{right_id} "
+                                f"reason=\"{fallback_reason}\" checks={final_metrics.get('fallback_checks', {})}"
+                            )
                 print(
                     f"Merge candidate C{left_id}+C{right_id} "
-                    f"accepted={str(allowed).lower()} "
-                    f"reason=\"{reason}\" "
-                    f"iou={metrics['iou']:.3f} "
-                    f"intersection_over_min_area={metrics['intersection_over_min_area']:.3f} "
-                    f"gap_px={metrics['gap_px']:.1f} "
-                    f"center_distance_px={metrics['center_distance_px']:.1f} "
-                    f"distance_diff_m={metrics['distance_diff_m']} "
-                    f"width_scale={metrics['width_scale']:.2f} "
-                    f"height_scale={metrics['height_scale']:.2f} "
-                    f"compactness_pass={str(bool(metrics['compactness_pass'])).lower()} "
-                    f"strong_spatial_pass={str(bool(metrics['strong_spatial_pass'])).lower()} "
-                    f"center_distance_only_used={str(bool(metrics['center_distance_only_used'])).lower()}"
+                    f"accepted={str(final_allowed).lower()} "
+                    f"method={final_metrics.get('merge_method', 'normal')} "
+                    f"reason=\"{final_reason}\" "
+                    f"iou={final_metrics['iou']:.3f} "
+                    f"intersection_over_min_area={final_metrics['intersection_over_min_area']:.3f} "
+                    f"gap_px={final_metrics['gap_px']:.1f} "
+                    f"center_distance_px={final_metrics['center_distance_px']:.1f} "
+                    f"distance_diff_m={final_metrics['distance_diff_m']} "
+                    f"width_scale={final_metrics['width_scale']:.2f} "
+                    f"height_scale={final_metrics['height_scale']:.2f} "
+                    f"compactness_pass={str(bool(final_metrics['compactness_pass'])).lower()} "
+                    f"strong_spatial_pass={str(bool(final_metrics['strong_spatial_pass'])).lower()} "
+                    f"center_distance_only_used={str(bool(final_metrics['center_distance_only_used'])).lower()} "
+                    f"fallback_reason={final_metrics.get('fallback_reason', '')}"
                 )
-                if not allowed:
+                merge_diagnostics.append(
+                    MergeDiagnostic(
+                        cluster_ids=[left_id, right_id],
+                        accepted=final_allowed,
+                        merge_method=final_metrics.get("merge_method", "normal"),
+                        reason=final_reason,
+                        metrics=final_metrics,
+                    )
+                )
+                if not final_allowed:
                     continue
 
-                score = merge_score(metrics)
+                score = merge_score(final_metrics)
                 if best_score is None or score > best_score:
                     best_score = score
                     best_pair = (left_id, right_id)
-                    best_reason = reason
-                    best_metrics = metrics
+                    best_reason = final_reason
+                    best_metrics = final_metrics
 
         if best_pair is None:
             break
@@ -1447,7 +1639,7 @@ def merge_clusters_second_stage(
         )
         final_mask_debug.append(debug)
 
-    return final_clusters, active_groupings, final_mask_debug, merge_steps
+    return final_clusters, active_groupings, final_mask_debug, merge_steps, merge_diagnostics
 
 
 def symbol_union_bbox_from_source(
@@ -2105,6 +2297,7 @@ def summary_payload(
     final_instances: Sequence[ClusterRecord],
     dropped_clusters: Sequence[dict],
     merge_steps: Sequence[MergeStep],
+    merge_diagnostics: Sequence[MergeDiagnostic],
 ) -> dict:
     return {
         "image": str(image_path),
@@ -2115,6 +2308,7 @@ def summary_payload(
         "range_mode": config["range_filter"]["mode"],
         "roi_filter": config["roi_filter"],
         "cluster_merge": config["cluster_merge"],
+        "merge": config.get("merge", {}),
         "aggregation": config.get("aggregation", {}),
         "bbox_expand": {
             "use_square_symbol_bbox": config["bbox"].get("use_square_symbol_bbox"),
@@ -2202,6 +2396,16 @@ def summary_payload(
             }
             for step in merge_steps
         ],
+        "merge_diagnostics": [
+            {
+                "cluster_ids": diagnostic.cluster_ids,
+                "accepted": diagnostic.accepted,
+                "merge_method": diagnostic.merge_method,
+                "reason": diagnostic.reason,
+                "metrics": diagnostic.metrics,
+            }
+            for diagnostic in merge_diagnostics
+        ],
     }
 
 
@@ -2261,7 +2465,7 @@ def main() -> int:
         args,
         config,
     )
-    clusters, cluster_groupings, mask_debug, merge_steps = merge_clusters_second_stage(
+    clusters, cluster_groupings, mask_debug, merge_steps, merge_diagnostics = merge_clusters_second_stage(
         first_stage_clusters,
         cluster_groupings,
         image,
@@ -2314,6 +2518,7 @@ def main() -> int:
         final_instances,
         dropped_clusters,
         merge_steps,
+        merge_diagnostics,
     )
     with (output_dir / "kfs_instance_summary.json").open("w", encoding="utf-8") as handle:
         json.dump(summary, handle, indent=2)

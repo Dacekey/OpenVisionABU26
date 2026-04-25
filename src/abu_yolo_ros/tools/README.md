@@ -190,6 +190,8 @@ Second-stage cluster merge:
 - Medium-distance KFS can false-merge if the second stage is too permissive, so the current merge also applies a compactness guard to the proposed merged symbol union.
 - Merge requires semantic compatibility, enough HSV color-mask support, a strong spatial condition, and compact merged geometry.
 - Center distance is debug-only by default and does not accept a merge by itself unless explicitly enabled in config.
+- A narrow fallback merge exists for dark or low-quality images where HSV body-mask support is weak.
+- That fallback only considers same-group adjacent clusters with strong geometry evidence, and it should be tuned carefully because overly permissive values can merge nearby KFS boxes.
 - This is offline experimental logic only and is not part of the runtime pipeline.
 
 Recommended first tuning attempt after v2:
