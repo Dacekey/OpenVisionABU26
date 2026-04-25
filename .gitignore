@@ -16,3 +16,6 @@ __pycache__/
 
 # Codex
 .codex/
+
+# Files
+src/abu_yolo_ros/tools/data_test/
