@@ -53,6 +53,10 @@ DEFAULT_CONFIG = {
         "max_merged_union_height_scale": 2.6,
     },
     "bbox": {
+        "use_square_symbol_bbox": True,
+        "square_symbol_scale": 1.0,
+        "max_square_side_ratio_of_image": 0.35,
+        "clustering_center_source": "raw",
         "expand_scale": 1.6,
         "expand_scale_x": 1.6,
         "expand_scale_y": 1.8,
@@ -95,6 +99,17 @@ DEFAULT_CONFIG = {
         "max_center_offset_ratio": 1.0,
         "min_refined_to_union_area_ratio": 0.5,
     },
+    "refinement": {
+        "neighbor_aware_clamp": True,
+        "neighbor_overlap_margin_px": 10,
+        "protect_other_cluster_symbols": True,
+        "neighbor_protection_bbox_source": "geometry",
+        "edge_clip_margin_px": 3,
+        "drop_edge_clipped": False,
+    },
+    "aggregation": {
+        "drop_ambiguous_clusters": True,
+    },
     "debug_white_mask": {
         "enabled": True,
         "s_high": 80,
@@ -111,10 +126,18 @@ class SymbolRecord:
     class_name: str
     confidence: float
     bbox_xyxy: Tuple[int, int, int, int]
+    raw_bbox: Tuple[int, int, int, int]
+    geometry_bbox: Tuple[int, int, int, int]
+    geometry_bbox_source: str
     center_xy: Tuple[float, float]
+    raw_center_xy: Tuple[float, float]
+    geometry_center_xy: Tuple[float, float]
     width: float
     height: float
     area: float
+    geometry_width: float
+    geometry_height: float
+    geometry_area: float
     bottom_y: float
     estimated_distance_m: Optional[float]
     keep: bool = True
@@ -132,6 +155,7 @@ class ClusterRecord:
     ambiguous: bool
     ambiguous_reason: str
     union_bbox: Tuple[int, int, int, int]
+    union_bbox_source: str
     expanded_bbox: Tuple[int, int, int, int]
     expanded_bbox_note: str
     hsv_mask_mode: str
@@ -140,6 +164,13 @@ class ClusterRecord:
     refined_bbox: Tuple[int, int, int, int]
     refined_bbox_source: str
     refined_bbox_fallback_reason: str
+    refined_bbox_before_neighbor_clamp: Tuple[int, int, int, int]
+    refined_bbox_neighbor_clamped: bool
+    neighbor_clamp_reason: str
+    neighbor_clamp_against_cluster_id: Optional[int]
+    edge_clipped: bool
+    edge_clipped_sides: List[str]
+    bbox_quality: str
     mean_distance_m: Optional[float]
     merged_from: List[int]
     is_merged_cluster: bool
@@ -338,6 +369,36 @@ def clamp_bbox(
     return (x1, y1, x2, y2)
 
 
+def bbox_center(bbox: Tuple[int, int, int, int]) -> Tuple[float, float]:
+    return (0.5 * (bbox[0] + bbox[2]), 0.5 * (bbox[1] + bbox[3]))
+
+
+def bbox_width_height_area(bbox: Tuple[int, int, int, int]) -> Tuple[float, float, float]:
+    width = max(1.0, float(bbox[2] - bbox[0]))
+    height = max(1.0, float(bbox[3] - bbox[1]))
+    return width, height, width * height
+
+
+def make_square_bbox(
+    bbox: Tuple[int, int, int, int],
+    image_width: int,
+    image_height: int,
+    scale: float,
+    max_square_side_ratio_of_image: float,
+) -> Tuple[int, int, int, int]:
+    cx, cy = bbox_center(bbox)
+    width, height, _ = bbox_width_height_area(bbox)
+    side = max(width, height) * max(1e-6, scale)
+    max_side = max(1.0, max_square_side_ratio_of_image * float(max(image_width, image_height)))
+    side = min(side, max_side)
+    half_side = 0.5 * side
+    return clamp_bbox(
+        (cx - half_side, cy - half_side, cx + half_side, cy + half_side),
+        image_width,
+        image_height,
+    )
+
+
 def estimate_symbol_distance(
     symbol: SymbolRecord,
     args,
@@ -363,7 +424,7 @@ def estimate_symbol_distance(
     return distance
 
 
-def infer_symbols(model, image: np.ndarray, args) -> List[SymbolRecord]:
+def infer_symbols(model, image: np.ndarray, args, config: dict) -> List[SymbolRecord]:
     try:
         results = model.predict(
             source=image,
@@ -394,21 +455,42 @@ def infer_symbols(model, image: np.ndarray, args) -> List[SymbolRecord]:
     ):
         class_id = int(cls_value)
         class_name = resolve_class_name(model, class_id)
-        bbox = clamp_bbox(tuple(float(v) for v in xyxy), image_width, image_height)
-        x1, y1, x2, y2 = bbox
-        width = max(1.0, float(x2 - x1))
-        height = max(1.0, float(y2 - y1))
-        area = width * height
+        raw_bbox = clamp_bbox(tuple(float(v) for v in xyxy), image_width, image_height)
+        bbox_cfg = config["bbox"]
+        if bbox_cfg.get("use_square_symbol_bbox", False):
+            geometry_bbox = make_square_bbox(
+                raw_bbox,
+                image_width,
+                image_height,
+                float(bbox_cfg.get("square_symbol_scale", 1.0)),
+                float(bbox_cfg.get("max_square_side_ratio_of_image", 0.35)),
+            )
+            geometry_bbox_source = "square_symbol_bbox"
+        else:
+            geometry_bbox = raw_bbox
+            geometry_bbox_source = "raw_yolo_bbox"
+
+        x1, y1, x2, y2 = raw_bbox
+        width, height, area = bbox_width_height_area(raw_bbox)
+        geometry_width, geometry_height, geometry_area = bbox_width_height_area(geometry_bbox)
         symbol = SymbolRecord(
             index=index,
             class_id=class_id,
             class_name=class_name,
             confidence=float(conf),
-            bbox_xyxy=bbox,
-            center_xy=(0.5 * (x1 + x2), 0.5 * (y1 + y2)),
+            bbox_xyxy=raw_bbox,
+            raw_bbox=raw_bbox,
+            geometry_bbox=geometry_bbox,
+            geometry_bbox_source=geometry_bbox_source,
+            center_xy=bbox_center(raw_bbox),
+            raw_center_xy=bbox_center(raw_bbox),
+            geometry_center_xy=bbox_center(geometry_bbox),
             width=width,
             height=height,
             area=area,
+            geometry_width=geometry_width,
+            geometry_height=geometry_height,
+            geometry_area=geometry_area,
             bottom_y=float(y2),
             estimated_distance_m=None,
         )
@@ -555,6 +637,13 @@ def apply_roi_filter(
     return filtered
 
 
+def clustering_center(symbol: SymbolRecord, config: dict) -> Tuple[float, float]:
+    source = config["bbox"].get("clustering_center_source", "raw")
+    if source == "geometry":
+        return symbol.geometry_center_xy
+    return symbol.raw_center_xy
+
+
 def symbol_size_metric(symbol: SymbolRecord) -> float:
     return math.sqrt(max(1.0, symbol.area))
 
@@ -570,6 +659,7 @@ def similarity_ratio(first: float, second: float) -> float:
 def pairwise_cluster_debug(
     first: SymbolRecord,
     second: SymbolRecord,
+    center_distance: float,
     threshold_px: float,
     height_similarity: float,
     area_similarity: float,
@@ -577,7 +667,7 @@ def pairwise_cluster_debug(
 ) -> str:
     return (
         f"pair({first.index},{second.index}) "
-        f"center_dist={math.hypot(first.center_xy[0] - second.center_xy[0], first.center_xy[1] - second.center_xy[1]):.1f} "
+        f"center_dist={center_distance:.1f} "
         f"threshold_px={threshold_px:.1f} "
         f"height_similarity={height_similarity:.2f} "
         f"area_similarity={area_similarity:.2f} "
@@ -591,9 +681,11 @@ def should_link_symbols(
     config: dict,
 ) -> Tuple[bool, str]:
     section = config["clustering"]
+    first_center = clustering_center(first, config)
+    second_center = clustering_center(second, config)
     center_distance = math.hypot(
-        first.center_xy[0] - second.center_xy[0],
-        first.center_xy[1] - second.center_xy[1],
+        first_center[0] - second_center[0],
+        first_center[1] - second_center[1],
     )
     average_symbol_size = 0.5 * (
         symbol_size_metric(first) + symbol_size_metric(second)
@@ -626,6 +718,7 @@ def should_link_symbols(
     return allowed, pairwise_cluster_debug(
         first,
         second,
+        center_distance,
         threshold_px,
         height_similarity,
         area_similarity,
@@ -688,10 +781,10 @@ def semantic_group_type(
 
 def union_bbox(symbols: Sequence[SymbolRecord]) -> Tuple[int, int, int, int]:
     return (
-        min(symbol.bbox_xyxy[0] for symbol in symbols),
-        min(symbol.bbox_xyxy[1] for symbol in symbols),
-        max(symbol.bbox_xyxy[2] for symbol in symbols),
-        max(symbol.bbox_xyxy[3] for symbol in symbols),
+        min(symbol.geometry_bbox[0] for symbol in symbols),
+        min(symbol.geometry_bbox[1] for symbol in symbols),
+        max(symbol.geometry_bbox[2] for symbol in symbols),
+        max(symbol.geometry_bbox[3] for symbol in symbols),
     )
 
 
@@ -1066,6 +1159,10 @@ def build_cluster_record(
         ambiguous=ambiguous,
         ambiguous_reason=ambiguous_reason,
         union_bbox=union,
+        union_bbox_source=(
+            "geometry_bbox" if config["bbox"].get("use_square_symbol_bbox", False)
+            else "raw_yolo_bbox"
+        ),
         expanded_bbox=expanded,
         expanded_bbox_note=expanded_note,
         hsv_mask_mode=config["hsv_mask"]["mode"],
@@ -1074,6 +1171,13 @@ def build_cluster_record(
         refined_bbox=expanded,
         refined_bbox_source="expanded_bbox_fallback",
         refined_bbox_fallback_reason="",
+        refined_bbox_before_neighbor_clamp=expanded,
+        refined_bbox_neighbor_clamped=False,
+        neighbor_clamp_reason="",
+        neighbor_clamp_against_cluster_id=None,
+        edge_clipped=False,
+        edge_clipped_sides=[],
+        bbox_quality="normal",
         mean_distance_m=mean_distance(group),
         merged_from=merged_from_ids,
         is_merged_cluster=len(merged_from_ids) > 1,
@@ -1093,6 +1197,7 @@ def build_cluster_record(
     record.color_mask_coverage = color_mask_coverage
     record.debug_white_mask_coverage = debug_white_mask_coverage
     record.refined_bbox = refined_bbox
+    record.refined_bbox_before_neighbor_clamp = refined_bbox
     record.refined_bbox_source = refined_source
     record.refined_bbox_fallback_reason = fallback_reason
 
@@ -1118,8 +1223,8 @@ def merge_metrics(
     merged_union = union_bbox(merged_symbols)
     merged_union_width = max(1.0, float(merged_union[2] - merged_union[0]))
     merged_union_height = max(1.0, float(merged_union[3] - merged_union[1]))
-    largest_symbol_width = max(max(1.0, symbol.width) for symbol in merged_symbols)
-    largest_symbol_height = max(max(1.0, symbol.height) for symbol in merged_symbols)
+    largest_symbol_width = max(max(1.0, symbol.geometry_width) for symbol in merged_symbols)
+    largest_symbol_height = max(max(1.0, symbol.geometry_height) for symbol in merged_symbols)
     width_scale = merged_union_width / largest_symbol_width
     height_scale = merged_union_height / largest_symbol_height
     compactness_pass = (
@@ -1345,6 +1450,221 @@ def merge_clusters_second_stage(
     return final_clusters, active_groupings, final_mask_debug, merge_steps
 
 
+def symbol_union_bbox_from_source(
+    symbols: Sequence[SymbolRecord],
+    source: str,
+) -> Tuple[int, int, int, int]:
+    if source == "raw":
+        return (
+            min(symbol.raw_bbox[0] for symbol in symbols),
+            min(symbol.raw_bbox[1] for symbol in symbols),
+            max(symbol.raw_bbox[2] for symbol in symbols),
+            max(symbol.raw_bbox[3] for symbol in symbols),
+        )
+    return (
+        min(symbol.geometry_bbox[0] for symbol in symbols),
+        min(symbol.geometry_bbox[1] for symbol in symbols),
+        max(symbol.geometry_bbox[2] for symbol in symbols),
+        max(symbol.geometry_bbox[3] for symbol in symbols),
+    )
+
+
+def bboxes_overlap(
+    first: Tuple[int, int, int, int],
+    second: Tuple[int, int, int, int],
+) -> bool:
+    return (
+        min(first[2], second[2]) > max(first[0], second[0]) and
+        min(first[3], second[3]) > max(first[1], second[1])
+    )
+
+
+def bbox_intersection_area(
+    first: Tuple[int, int, int, int],
+    second: Tuple[int, int, int, int],
+) -> int:
+    inter_w = min(first[2], second[2]) - max(first[0], second[0])
+    inter_h = min(first[3], second[3]) - max(first[1], second[1])
+    if inter_w <= 0 or inter_h <= 0:
+        return 0
+    return int(inter_w * inter_h)
+
+
+def bbox_contains_point(
+    bbox: Tuple[int, int, int, int],
+    point: Tuple[float, float],
+) -> bool:
+    return bbox[0] <= point[0] <= bbox[2] and bbox[1] <= point[1] <= bbox[3]
+
+
+def valid_neighbor_clamp_bbox(
+    bbox: Tuple[int, int, int, int],
+    own_center: Tuple[float, float],
+) -> bool:
+    width = bbox[2] - bbox[0]
+    height = bbox[3] - bbox[1]
+    return width >= 5 and height >= 5 and bbox_contains_point(bbox, own_center)
+
+
+def apply_neighbor_aware_refined_bbox_clamp(
+    clusters: Sequence[ClusterRecord],
+    cluster_groupings: Dict[int, List[SymbolRecord]],
+    config: dict,
+):
+    refinement_cfg = config.get("refinement", {})
+    if not refinement_cfg.get("neighbor_aware_clamp", False):
+        return
+    if not refinement_cfg.get("protect_other_cluster_symbols", True):
+        return
+
+    margin = int(refinement_cfg.get("neighbor_overlap_margin_px", 10))
+    source = refinement_cfg.get("neighbor_protection_bbox_source", "geometry")
+
+    for cluster in clusters:
+        original = cluster.refined_bbox
+        current = original
+        own_center = bbox_center(cluster.union_bbox)
+        clamp_reasons: List[str] = []
+        clamped_against: Optional[int] = None
+
+        for other in clusters:
+            if other.cluster_id == cluster.cluster_id:
+                continue
+
+            other_symbols = cluster_groupings.get(other.cluster_id, [])
+            if not other_symbols:
+                continue
+
+            protected_bbox = symbol_union_bbox_from_source(other_symbols, source)
+            intersection_area = bbox_intersection_area(current, protected_bbox)
+            if intersection_area <= 0:
+                continue
+
+            ax, ay = bbox_center(cluster.union_bbox)
+            bx, by = bbox_center(other.union_bbox)
+            candidate = list(current)
+            axis = "x" if abs(ax - bx) >= abs(ay - by) else "y"
+            if axis == "x":
+                if ax < bx:
+                    candidate[2] = min(candidate[2], protected_bbox[0] - margin)
+                else:
+                    candidate[0] = max(candidate[0], protected_bbox[2] + margin)
+            else:
+                if ay < by:
+                    candidate[3] = min(candidate[3], protected_bbox[1] - margin)
+                else:
+                    candidate[1] = max(candidate[1], protected_bbox[3] + margin)
+
+            candidate_bbox = tuple(int(v) for v in candidate)
+            print(
+                f"Neighbor clamp candidate A=C{cluster.cluster_id} B=C{other.cluster_id} "
+                f"a_refined={current} b_protected={protected_bbox} "
+                f"intersection_area={intersection_area} axis={axis} "
+                f"candidate={candidate_bbox}"
+            )
+            if candidate_bbox == current:
+                print(
+                    f"Neighbor clamp rejected A=C{cluster.cluster_id} B=C{other.cluster_id} "
+                    "reason=no_effect_after_axis_clamp"
+                )
+                continue
+            if not valid_neighbor_clamp_bbox(candidate_bbox, own_center):
+                print(
+                    f"Neighbor clamp rejected A=C{cluster.cluster_id} B=C{other.cluster_id} "
+                    f"reason=invalid_or_excludes_own_center candidate={candidate_bbox}"
+                )
+                continue
+
+            current = candidate_bbox
+            clamped_against = other.cluster_id
+            clamp_reasons.append(
+                f"old_bbox={original} protected_{source}_bbox={protected_bbox} "
+                f"axis={axis} new_bbox={candidate_bbox} against C{other.cluster_id}"
+            )
+            print(
+                f"Neighbor clamp accepted A=C{cluster.cluster_id} B=C{other.cluster_id} "
+                f"axis={axis} new_bbox={candidate_bbox}"
+            )
+
+        if current != original:
+            cluster.refined_bbox_before_neighbor_clamp = original
+            cluster.refined_bbox = current
+            cluster.refined_bbox_neighbor_clamped = True
+            cluster.neighbor_clamp_reason = "; ".join(clamp_reasons)
+            cluster.neighbor_clamp_against_cluster_id = clamped_against
+            print(
+                f"Neighbor clamp C{cluster.cluster_id}: "
+                f"before={original} after={current} "
+                f"reason={cluster.neighbor_clamp_reason}"
+            )
+
+
+def detect_edge_clipped_sides(
+    bbox: Tuple[int, int, int, int],
+    image_width: int,
+    image_height: int,
+    margin: int,
+) -> List[str]:
+    sides: List[str] = []
+    if bbox[0] <= margin:
+        sides.append("left")
+    if bbox[1] <= margin:
+        sides.append("top")
+    if bbox[2] >= image_width - 1 - margin:
+        sides.append("right")
+    if bbox[3] >= image_height - 1 - margin:
+        sides.append("bottom")
+    return sides
+
+
+def apply_edge_visibility_metadata(
+    clusters: Sequence[ClusterRecord],
+    image_width: int,
+    image_height: int,
+    config: dict,
+) -> List[ClusterRecord]:
+    refinement_cfg = config.get("refinement", {})
+    margin = int(refinement_cfg.get("edge_clip_margin_px", 3))
+    keep_clusters: List[ClusterRecord] = []
+
+    for cluster in clusters:
+        union_sides = detect_edge_clipped_sides(
+            cluster.union_bbox,
+            image_width,
+            image_height,
+            margin,
+        )
+        refined_sides = detect_edge_clipped_sides(
+            cluster.refined_bbox,
+            image_width,
+            image_height,
+            margin,
+        )
+        combined_sides = []
+        for side in union_sides + refined_sides:
+            if side not in combined_sides:
+                combined_sides.append(side)
+
+        cluster.edge_clipped = len(combined_sides) > 0
+        cluster.edge_clipped_sides = combined_sides
+        cluster.bbox_quality = "partial_visible" if cluster.edge_clipped else "normal"
+
+        if cluster.edge_clipped:
+            print(
+                f"Edge-clipped cluster C{cluster.cluster_id}: "
+                f"sides={cluster.edge_clipped_sides} "
+                f"union_bbox={cluster.union_bbox} refined_bbox={cluster.refined_bbox}"
+            )
+
+        if refinement_cfg.get("drop_edge_clipped", False) and cluster.edge_clipped:
+            print(f"Dropping edge-clipped cluster C{cluster.cluster_id} due to config")
+            continue
+
+        keep_clusters.append(cluster)
+
+    return keep_clusters
+
+
 def build_clusters(
     image: np.ndarray,
     symbols: Sequence[SymbolRecord],
@@ -1382,12 +1702,26 @@ def draw_symbols(
     symbols: Sequence[SymbolRecord],
     title: str,
     config: Optional[dict] = None,
+    show_geometry_bbox: bool = False,
 ) -> np.ndarray:
     canvas = image.copy()
     for symbol in symbols:
-        x1, y1, x2, y2 = symbol.bbox_xyxy
+        x1, y1, x2, y2 = symbol.raw_bbox
         color = (0, 255, 0) if symbol.keep else (0, 0, 255)
         cv2.rectangle(canvas, (x1, y1), (x2, y2), color, 2)
+        if show_geometry_bbox and symbol.geometry_bbox_source == "square_symbol_bbox":
+            gx1, gy1, gx2, gy2 = symbol.geometry_bbox
+            cv2.rectangle(canvas, (gx1, gy1), (gx2, gy2), (255, 255, 0), 1)
+            cv2.putText(
+                canvas,
+                "geom",
+                (gx1, min(image.shape[0] - 6, gy2 + 14)),
+                cv2.FONT_HERSHEY_SIMPLEX,
+                0.4,
+                (255, 255, 0),
+                1,
+                cv2.LINE_AA,
+            )
         label = (
             f"{symbol.index}:{symbol.class_name} "
             f"{symbol.confidence:.2f} "
@@ -1474,7 +1808,7 @@ def draw_clusters(
         color = cluster_color(cluster.cluster_id)
         for symbol_index in cluster.symbol_indices:
             symbol = symbol_lookup[symbol_index]
-            x1, y1, x2, y2 = symbol.bbox_xyxy
+            x1, y1, x2, y2 = symbol.raw_bbox
             cv2.rectangle(canvas, (x1, y1), (x2, y2), color, 2)
 
         ux1, uy1, ux2, uy2 = cluster.union_bbox
@@ -1503,18 +1837,37 @@ def draw_clusters(
 
 def draw_expanded_bboxes(
     image: np.ndarray,
+    symbols: Sequence[SymbolRecord],
     clusters: Sequence[ClusterRecord],
 ) -> np.ndarray:
     canvas = image.copy()
+    symbol_lookup = {symbol.index: symbol for symbol in symbols}
     for cluster in clusters:
         color = cluster_color(cluster.cluster_id)
+        for symbol_index in cluster.symbol_indices:
+            symbol = symbol_lookup[symbol_index]
+            rx1, ry1, rx2, ry2 = symbol.raw_bbox
+            cv2.rectangle(canvas, (rx1, ry1), (rx2, ry2), color, 1)
+            if symbol.geometry_bbox_source == "square_symbol_bbox":
+                gx1, gy1, gx2, gy2 = symbol.geometry_bbox
+                cv2.rectangle(canvas, (gx1, gy1), (gx2, gy2), (255, 255, 0), 1)
+                cv2.putText(
+                    canvas,
+                    "geom",
+                    (gx1, min(image.shape[0] - 6, gy2 + 14)),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.4,
+                    (255, 255, 0),
+                    1,
+                    cv2.LINE_AA,
+                )
         ux1, uy1, ux2, uy2 = cluster.union_bbox
         ex1, ey1, ex2, ey2 = cluster.expanded_bbox
         cv2.rectangle(canvas, (ux1, uy1), (ux2, uy2), color, 2)
         cv2.rectangle(canvas, (ex1, ey1), (ex2, ey2), color, 1)
         cv2.putText(
             canvas,
-            f"C{cluster.cluster_id} union/thick expanded/thin",
+            f"C{cluster.cluster_id} union/thick expanded/thin {cluster.union_bbox_source}",
             (ex1, max(18, ey1 - 6)),
             cv2.FONT_HERSHEY_SIMPLEX,
             0.5,
@@ -1622,11 +1975,25 @@ def draw_final_instances(
             f"C{cluster.cluster_id} AMBIGUOUS size={len(cluster.symbol_indices)}"
             if cluster.ambiguous else
             (
-                f"C{cluster.cluster_id} {cluster.group_type} merged symbols={len(cluster.symbol_indices)}"
-                if cluster.is_merged_cluster else
-                f"C{cluster.cluster_id} {cluster.group_type} source={cluster.refined_bbox_source}"
+                (
+                    f"C{cluster.cluster_id} {cluster.group_type} "
+                    f"merged symbols={len(cluster.symbol_indices)} neighbor_clamped"
+                    if cluster.is_merged_cluster and cluster.refined_bbox_neighbor_clamped else
+                    f"C{cluster.cluster_id} {cluster.group_type} merged symbols={len(cluster.symbol_indices)}"
+                    if cluster.is_merged_cluster else
+                    (
+                        f"C{cluster.cluster_id} {cluster.group_type} "
+                        f"source={cluster.refined_bbox_source} neighbor_clamped"
+                        if cluster.refined_bbox_neighbor_clamped else
+                        f"C{cluster.cluster_id} {cluster.group_type} source={cluster.refined_bbox_source}"
+                    )
+                )
             )
         )
+        if cluster.edge_clipped:
+            label = (
+                f"{label} {cluster.bbox_quality}:{','.join(cluster.edge_clipped_sides)}"
+            )
         cv2.putText(
             canvas,
             label,
@@ -1649,9 +2016,13 @@ def print_symbol_logs(symbols: Sequence[SymbolRecord]):
             f"class_id={symbol.class_id} "
             f"class_name={symbol.class_name} "
             f"conf={symbol.confidence:.2f} "
-            f"bbox={symbol.bbox_xyxy} "
+            f"bbox={symbol.raw_bbox} "
+            f"geometry_bbox={symbol.geometry_bbox} "
+            f"geometry_bbox_source={symbol.geometry_bbox_source} "
             f"bbox_height={symbol.height:.1f} "
             f"bbox_area={symbol.area:.1f} "
+            f"geometry_height={symbol.geometry_height:.1f} "
+            f"geometry_area={symbol.geometry_area:.1f} "
             f"estimated_distance_m={format_distance(symbol.estimated_distance_m)} "
             f"keep={str(symbol.keep).lower()} "
             f"reason={symbol.keep_reason if symbol.keep else symbol.drop_reason}"
@@ -1670,12 +2041,20 @@ def print_cluster_logs(clusters: Sequence[ClusterRecord]):
             f"ambiguous={str(cluster.ambiguous).lower()} "
             f"ambiguous_reason={cluster.ambiguous_reason} "
             f"union_bbox={cluster.union_bbox} "
+            f"union_bbox_source={cluster.union_bbox_source} "
             f"expanded_bbox={cluster.expanded_bbox} "
             f"color_mask_coverage={cluster.color_mask_coverage:.3f} "
             f"debug_white_mask_coverage={cluster.debug_white_mask_coverage} "
             f"refined_bbox={cluster.refined_bbox} "
+            f"refined_bbox_before_neighbor_clamp={cluster.refined_bbox_before_neighbor_clamp} "
+            f"refined_bbox_neighbor_clamped={str(cluster.refined_bbox_neighbor_clamped).lower()} "
             f"refined_bbox_source={cluster.refined_bbox_source} "
             f"refined_bbox_fallback_reason={cluster.refined_bbox_fallback_reason} "
+            f"neighbor_clamp_reason={cluster.neighbor_clamp_reason} "
+            f"neighbor_clamp_against_cluster_id={cluster.neighbor_clamp_against_cluster_id} "
+            f"edge_clipped={str(cluster.edge_clipped).lower()} "
+            f"edge_clipped_sides={cluster.edge_clipped_sides} "
+            f"bbox_quality={cluster.bbox_quality} "
             f"merged_from={cluster.merged_from}"
         )
 
@@ -1685,6 +2064,37 @@ def save_image(path: Path, image: np.ndarray):
     cv2.imwrite(str(path), image)
 
 
+def filter_final_candidate_clusters(
+    clusters: Sequence[ClusterRecord],
+    config: dict,
+) -> Tuple[List[ClusterRecord], List[dict]]:
+    aggregation_cfg = config.get("aggregation", {})
+    valid_clusters: List[ClusterRecord] = []
+    dropped_clusters: List[dict] = []
+
+    for cluster in clusters:
+        if (
+            aggregation_cfg.get("drop_ambiguous_clusters", True) and
+            cluster.group_type == "AMBIGUOUS"
+        ):
+            dropped_clusters.append(
+                {
+                    "cluster_id": cluster.cluster_id,
+                    "symbol_indices": cluster.symbol_indices,
+                    "class_names": cluster.class_names,
+                    "drop_reason": "ambiguous_cluster",
+                }
+            )
+            print(
+                f"Dropping final candidate cluster C{cluster.cluster_id} "
+                f"reason=ambiguous_cluster symbol_indices={cluster.symbol_indices}"
+            )
+            continue
+        valid_clusters.append(cluster)
+
+    return valid_clusters, dropped_clusters
+
+
 def summary_payload(
     args,
     config: dict,
@@ -1692,6 +2102,8 @@ def summary_payload(
     image_path: Path,
     symbols: Sequence[SymbolRecord],
     clusters: Sequence[ClusterRecord],
+    final_instances: Sequence[ClusterRecord],
+    dropped_clusters: Sequence[dict],
     merge_steps: Sequence[MergeStep],
 ) -> dict:
     return {
@@ -1703,21 +2115,35 @@ def summary_payload(
         "range_mode": config["range_filter"]["mode"],
         "roi_filter": config["roi_filter"],
         "cluster_merge": config["cluster_merge"],
+        "aggregation": config.get("aggregation", {}),
         "bbox_expand": {
+            "use_square_symbol_bbox": config["bbox"].get("use_square_symbol_bbox"),
+            "square_symbol_scale": config["bbox"].get("square_symbol_scale"),
+            "max_square_side_ratio_of_image": config["bbox"].get("max_square_side_ratio_of_image"),
+            "clustering_center_source": config["bbox"].get("clustering_center_source"),
             "expand_scale": config["bbox"].get("expand_scale"),
             "expand_scale_x": config["bbox"].get("expand_scale_x"),
             "expand_scale_y": config["bbox"].get("expand_scale_y"),
         },
         "contour_selection": config["contour"]["selection"],
+        "refinement": config.get("refinement", {}),
         "symbols": [
             {
                 "index": symbol.index,
                 "class_id": symbol.class_id,
                 "class_name": symbol.class_name,
                 "confidence": symbol.confidence,
-                "bbox": symbol.bbox_xyxy,
+                "bbox": symbol.raw_bbox,
+                "raw_bbox": symbol.raw_bbox,
+                "geometry_bbox": symbol.geometry_bbox,
+                "geometry_bbox_source": symbol.geometry_bbox_source,
+                "square_symbol_scale": config["bbox"].get("square_symbol_scale"),
+                "bbox_width": symbol.width,
                 "bbox_height": symbol.height,
                 "bbox_area": symbol.area,
+                "geometry_width": symbol.geometry_width,
+                "geometry_height": symbol.geometry_height,
+                "geometry_area": symbol.geometry_area,
                 "estimated_distance_m": symbol.estimated_distance_m,
                 "keep": symbol.keep,
                 "drop_reason": symbol.drop_reason,
@@ -1734,18 +2160,38 @@ def summary_payload(
                 "ambiguous": cluster.ambiguous,
                 "ambiguous_reason": cluster.ambiguous_reason,
                 "union_bbox": cluster.union_bbox,
+                "union_bbox_source": cluster.union_bbox_source,
                 "expanded_bbox": cluster.expanded_bbox,
                 "hsv_mask_mode": cluster.hsv_mask_mode,
                 "color_mask_coverage": cluster.color_mask_coverage,
                 "debug_white_mask_coverage": cluster.debug_white_mask_coverage,
                 "refined_bbox": cluster.refined_bbox,
+                "refined_bbox_before_neighbor_clamp": cluster.refined_bbox_before_neighbor_clamp,
+                "refined_bbox_neighbor_clamped": cluster.refined_bbox_neighbor_clamped,
                 "refined_bbox_source": cluster.refined_bbox_source,
                 "refined_bbox_fallback_reason": cluster.refined_bbox_fallback_reason,
+                "neighbor_clamp_reason": cluster.neighbor_clamp_reason,
+                "neighbor_clamp_against_cluster_id": cluster.neighbor_clamp_against_cluster_id,
+                "edge_clipped": cluster.edge_clipped,
+                "edge_clipped_sides": cluster.edge_clipped_sides,
+                "bbox_quality": cluster.bbox_quality,
                 "merged_from": cluster.merged_from,
                 "is_merged_cluster": cluster.is_merged_cluster,
             }
             for cluster in clusters
         ],
+        "final_instances": [
+            {
+                "cluster_id": cluster.cluster_id,
+                "symbol_indices": cluster.symbol_indices,
+                "class_names": cluster.class_names,
+                "group_type": cluster.group_type,
+                "refined_bbox": cluster.refined_bbox,
+                "bbox_quality": cluster.bbox_quality,
+            }
+            for cluster in final_instances
+        ],
+        "dropped_clusters": list(dropped_clusters),
         "merge_steps": [
             {
                 "before_cluster_ids": step.before_cluster_ids,
@@ -1789,7 +2235,7 @@ def main() -> int:
 
     try:
         model = load_model(model_path)
-        symbols = infer_symbols(model, image, args)
+        symbols = infer_symbols(model, image, args, config)
     except Exception as exc:
         return fail(str(exc))
 
@@ -1822,6 +2268,14 @@ def main() -> int:
         args,
         config,
     )
+    apply_neighbor_aware_refined_bbox_clamp(clusters, cluster_groupings, config)
+    clusters = apply_edge_visibility_metadata(
+        clusters,
+        image.shape[1],
+        image.shape[0],
+        config,
+    )
+    final_instances, dropped_clusters = filter_final_candidate_clusters(clusters, config)
 
     print(f"Selected HSV mask mode: {config['hsv_mask']['mode']}")
     print_symbol_logs(symbols)
@@ -1829,18 +2283,26 @@ def main() -> int:
     print_cluster_logs(first_stage_clusters)
     print("Final clusters:")
     print_cluster_logs(clusters)
+    if dropped_clusters:
+        print(f"Dropped final candidate clusters: {dropped_clusters}")
 
     output_dir.mkdir(parents=True, exist_ok=True)
     save_image(output_dir / "01_yolo_symbols.jpg", draw_symbols(image, symbols, "YOLO symbols"))
     save_image(
         output_dir / "02_range_filtered.jpg",
-        draw_symbols(image, kept_symbols, "Range + ROI filtered symbols", config),
+        draw_symbols(
+            image,
+            kept_symbols,
+            "Range + ROI filtered symbols",
+            config,
+            show_geometry_bbox=True,
+        ),
     )
     save_image(output_dir / "03_clusters.jpg", draw_clusters(image, kept_symbols, first_stage_clusters))
     save_image(output_dir / "03b_merged_clusters.jpg", draw_clusters(image, kept_symbols, clusters))
-    save_image(output_dir / "04_expanded_bbox.jpg", draw_expanded_bboxes(image, clusters))
+    save_image(output_dir / "04_expanded_bbox.jpg", draw_expanded_bboxes(image, kept_symbols, clusters))
     save_image(output_dir / "05_kfs_mask.jpg", make_mask_debug_board(mask_debug, clusters))
-    save_image(output_dir / "06_final_instances.jpg", draw_final_instances(image, clusters))
+    save_image(output_dir / "06_final_instances.jpg", draw_final_instances(image, final_instances))
 
     summary = summary_payload(
         args,
@@ -1849,6 +2311,8 @@ def main() -> int:
         image_path,
         symbols,
         clusters,
+        final_instances,
+        dropped_clusters,
         merge_steps,
     )
     with (output_dir / "kfs_instance_summary.json").open("w", encoding="utf-8") as handle:

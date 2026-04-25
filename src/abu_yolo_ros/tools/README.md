@@ -165,6 +165,24 @@ Contour refinement:
 - Default contour selection is `closest_to_symbol_union_center`.
 - This is safer than `largest` when a crop contains a bigger unrelated color region.
 
+Square-normalized symbol bbox:
+
+- YOLO detects symbols, not full KFS cubes, so some symbol boxes are very tall/narrow or wide/short.
+- The prototype can normalize each symbol into a square geometry bbox before cluster union and expansion.
+- This makes expanded KFS candidates more stable while preserving the raw YOLO bbox for debug images and logs.
+- Disable it with `bbox.use_square_symbol_bbox=false` if it hurts a specific dataset.
+
+Neighbor-aware final bbox clamp:
+
+- A final refined bbox can still become too wide after square-normalized expansion and HSV contour refinement.
+- The prototype can clamp a final bbox away from neighboring cluster symbol regions so one instance does not swallow another cluster.
+- This is especially useful when the refined HSV contour drifts into a nearby KFS candidate.
+
+Final aggregation:
+
+- The prototype keeps ambiguous clusters in debug records, but drops them from final KFS candidates by default.
+- This is controlled by `aggregation.drop_ambiguous_clusters` and defaults to a safety-first `true`.
+
 Second-stage cluster merge:
 
 - Close KFS can show symbols on different faces that are far apart in 2D because of perspective.
