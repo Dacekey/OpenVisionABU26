@@ -10,9 +10,11 @@ endif()
 find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
+find_package(std_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(vision_msgs REQUIRED)
+find_package(rosidl_default_generators REQUIRED)
 
 # ONNX Runtime
 if(DEFINED ENV{ONNXRUNTIME_DIR})
@@ -33,6 +35,12 @@ include_directories(
 )
 
 link_directories(${ONNXRUNTIME_DIR}/lib)
+
+rosidl_generate_interfaces(${PROJECT_NAME}
+  "msg/KfsInstance.msg"
+  "msg/KfsInstanceArray.msg"
+  DEPENDENCIES std_msgs vision_msgs
+)
 
 # Image Passthrough Node
 add_executable(image_passthrough_node
@@ -85,9 +93,14 @@ ament_target_dependencies(
   yolo_detection_node
   rclcpp
   sensor_msgs
+  std_msgs
   cv_bridge
   vision_msgs
 )
+
+rosidl_get_typesupport_target(cpp_typesupport_target
+  ${PROJECT_NAME} "rosidl_typesupport_cpp")
+target_link_libraries(yolo_detection_node ${cpp_typesupport_target})
 
 target_link_libraries(
   yolo_detection_node
@@ -126,4 +139,5 @@ if(BUILD_TESTING)
   )
 endif()
 
+ament_export_dependencies(rosidl_default_runtime)
 ament_package()

@@ -31,6 +31,17 @@ struct DecisionResult {
     double final_confidence;
 };
 
+struct KFSInstanceDecisionInput {
+    std::string group_type;
+    double symbol_confidence = 0.0;
+    bool team_color_match = false;
+    double color_confidence = 0.0;
+    double color_mask_coverage = 0.0;
+    std::string bbox_quality = "unknown";
+    bool ambiguous = false;
+    std::string ambiguous_reason;
+};
+
 std::string decisionToString(KFSDecision decision);
 
 bool isR1ClassName(const std::string& class_name);
@@ -47,6 +58,10 @@ DecisionResult classifyKFS(
     const std::string& class_name,
     double yolo_confidence,
     const TeamColorResult* color_result,
+    const DecisionEngineConfig& config);
+
+DecisionResult classifyKFSInstance(
+    const KFSInstanceDecisionInput& input,
     const DecisionEngineConfig& config);
 
 }  // namespace abu_yolo_ros

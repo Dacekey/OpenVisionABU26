@@ -26,7 +26,7 @@ yolo_detection_node:
     log_timing: false
     debug_detections: true
     enable_team_color_filter: true
-    team_color: "blue"
+    team_color: "red"
 
     # TeamColorFilter Thresholds
     red_h_low_1: 0
@@ -68,8 +68,22 @@ yolo_detection_node:
     # Existing /yolo/detections and /yolo/image_annotated outputs remain unchanged.
     kfs_instance_aggregation.enabled: true
     kfs_instance_aggregation.debug_instances: true
+    # Publishes structured KFS final instances for downstream modules.
+    # This does not replace /yolo/detections: /yolo/detections remains symbol-level output.
+    # /yolo/kfs_instances is KFS-level output.
+    kfs_instance_aggregation.publish_instances: true
+    kfs_instance_aggregation.instances_topic: "/yolo/kfs_instances"
     kfs_instance_aggregation.publish_debug_image: true
     kfs_instance_aggregation.debug_image_topic: "/yolo/kfs_instances/image_annotated"
+    # refined_bbox is the primary crop because it best approximates the KFS body.
+    # expanded_bbox is fallback only.
+    # symbol-level color remains debug/secondary.
+    kfs_instance_aggregation.enable_instance_team_color_filter: true
+    kfs_instance_aggregation.instance_color_primary_bbox: "refined_bbox"
+    kfs_instance_aggregation.instance_color_fallback_bbox: "expanded_bbox"
+    kfs_instance_aggregation.instance_color_min_confidence: 0.30
+    kfs_instance_aggregation.instance_color_min_crop_area_px: 400
+    kfs_instance_aggregation.debug_instance_color: false
     kfs_instance_aggregation.draw_roi: true
     kfs_instance_aggregation.roi_color_bgr: [0, 255, 255]
     kfs_instance_aggregation.roi_thickness: 2

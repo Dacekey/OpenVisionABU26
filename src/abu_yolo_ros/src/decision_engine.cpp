@@ -25,6 +25,26 @@ double confidenceThresholdForClass(
     return config.fake_conf_threshold;
 }
 
+bool isAmbiguousGroupType(const std::string& group_type)
+{
+    return group_type == "AMBIGUOUS";
+}
+
+bool isRealGroupType(const std::string& group_type)
+{
+    return group_type == "REAL";
+}
+
+bool isFakeGroupType(const std::string& group_type)
+{
+    return group_type == "FAKE";
+}
+
+bool isR1GroupType(const std::string& group_type)
+{
+    return group_type == "R1";
+}
+
 }  // namespace
 
 std::string decisionToString(KFSDecision decision)
@@ -153,6 +173,72 @@ DecisionResult classifyKFS(
     return {
         KFSDecision::COLLECT,
         "REAL KFS with correct team color - COLLECT",
+        final_confidence};
+}
+
+DecisionResult classifyKFSInstance(
+    const KFSInstanceDecisionInput& input,
+    const DecisionEngineConfig& config)
+{
+    if (input.ambiguous || isAmbiguousGroupType(input.group_type)) {
+        return {
+            KFSDecision::UNKNOWN,
+            "AMBIGUOUS KFS instance - UNKNOWN",
+            0.0};
+    }
+
+    if (isFakeGroupType(input.group_type)) {
+        return {
+            KFSDecision::AVOID,
+            "FAKE KFS instance - AVOID",
+            input.symbol_confidence};
+    }
+
+    if (isR1GroupType(input.group_type)) {
+        return {
+            KFSDecision::AVOID,
+            "R1 KFS instance - AVOID",
+            input.symbol_confidence};
+    }
+
+    if (!isRealGroupType(input.group_type)) {
+        return {
+            KFSDecision::UNKNOWN,
+            "Unknown KFS instance group type",
+            0.0};
+    }
+
+    if (input.symbol_confidence < config.real_conf_threshold) {
+        return {
+            config.unknown_on_low_confidence ?
+                KFSDecision::UNKNOWN :
+                KFSDecision::AVOID,
+            "Low REAL instance confidence",
+            input.symbol_confidence};
+    }
+
+    if (config.require_team_color_match &&
+        !input.team_color_match) {
+        return {
+            KFSDecision::UNKNOWN,
+            "REAL KFS instance without team color match - UNKNOWN",
+            input.symbol_confidence};
+    }
+
+    const double final_confidence =
+        config.yolo_confidence_weight * input.symbol_confidence +
+        config.color_confidence_weight * input.color_confidence;
+
+    if (final_confidence < config.collect_min_confidence) {
+        return {
+            KFSDecision::UNKNOWN,
+            "REAL KFS instance final confidence too low",
+            final_confidence};
+    }
+
+    return {
+        KFSDecision::COLLECT,
+        "REAL KFS instance with correct team color - COLLECT",
         final_confidence};
 }
 

@@ -8,6 +8,7 @@ namespace {
 
 using abu_yolo_ros::DecisionEngineConfig;
 using abu_yolo_ros::DecisionResult;
+using abu_yolo_ros::KFSInstanceDecisionInput;
 using abu_yolo_ros::KFSDecision;
 using abu_yolo_ros::TeamColor;
 using abu_yolo_ros::TeamColorResult;
@@ -127,6 +128,133 @@ int main()
     ok &= expect(
         approxEqual(real3_result.final_confidence, expected_final_conf),
         "REAL confidence fusion should remain unchanged");
+
+    const KFSInstanceDecisionInput real_collect_input{
+        "REAL",
+        0.92,
+        true,
+        0.90,
+        0.40,
+        "normal",
+        false,
+        ""};
+    const DecisionResult real_collect_result =
+        abu_yolo_ros::classifyKFSInstance(
+            real_collect_input,
+            config);
+    ok &= expect(
+        real_collect_result.decision == KFSDecision::COLLECT,
+        "REAL instance with team match and high confidence should COLLECT");
+
+    const KFSInstanceDecisionInput real_no_match_input{
+        "REAL",
+        0.92,
+        false,
+        0.90,
+        0.40,
+        "normal",
+        false,
+        ""};
+    const DecisionResult real_no_match_result =
+        abu_yolo_ros::classifyKFSInstance(
+            real_no_match_input,
+            config);
+    ok &= expect(
+        real_no_match_result.decision == KFSDecision::UNKNOWN,
+        "REAL instance without team match should be UNKNOWN");
+
+    const KFSInstanceDecisionInput real_low_conf_input{
+        "REAL",
+        0.40,
+        true,
+        0.90,
+        0.40,
+        "normal",
+        false,
+        ""};
+    const DecisionResult real_low_conf_result =
+        abu_yolo_ros::classifyKFSInstance(
+            real_low_conf_input,
+            config);
+    ok &= expect(
+        real_low_conf_result.decision == KFSDecision::UNKNOWN,
+        "Low-confidence REAL instance should be UNKNOWN when unknown_on_low_confidence=true");
+
+    const DecisionResult real_low_conf_avoid_result =
+        abu_yolo_ros::classifyKFSInstance(
+            real_low_conf_input,
+            avoid_low_conf_config);
+    ok &= expect(
+        real_low_conf_avoid_result.decision == KFSDecision::AVOID,
+        "Low-confidence REAL instance should be AVOID when unknown_on_low_confidence=false");
+
+    const KFSInstanceDecisionInput fake_instance_input{
+        "FAKE",
+        0.95,
+        false,
+        0.0,
+        0.10,
+        "normal",
+        false,
+        ""};
+    const DecisionResult fake_instance_result =
+        abu_yolo_ros::classifyKFSInstance(
+            fake_instance_input,
+            config);
+    ok &= expect(
+        fake_instance_result.decision == KFSDecision::AVOID,
+        "FAKE instance should always be AVOID");
+
+    const KFSInstanceDecisionInput r1_instance_input{
+        "R1",
+        0.95,
+        false,
+        0.0,
+        0.10,
+        "normal",
+        false,
+        ""};
+    const DecisionResult r1_instance_result =
+        abu_yolo_ros::classifyKFSInstance(
+            r1_instance_input,
+            config);
+    ok &= expect(
+        r1_instance_result.decision == KFSDecision::AVOID,
+        "R1 instance should always be AVOID");
+
+    const KFSInstanceDecisionInput ambiguous_instance_input{
+        "AMBIGUOUS",
+        0.95,
+        false,
+        0.0,
+        0.10,
+        "normal",
+        true,
+        "too_many_symbols"};
+    const DecisionResult ambiguous_instance_result =
+        abu_yolo_ros::classifyKFSInstance(
+            ambiguous_instance_input,
+            config);
+    ok &= expect(
+        ambiguous_instance_result.decision == KFSDecision::UNKNOWN,
+        "AMBIGUOUS instance should be UNKNOWN");
+
+    const KFSInstanceDecisionInput unknown_group_input{
+        "UNKNOWN",
+        0.95,
+        false,
+        0.0,
+        0.10,
+        "normal",
+        false,
+        ""};
+    const DecisionResult unknown_group_result =
+        abu_yolo_ros::classifyKFSInstance(
+            unknown_group_input,
+            config);
+    ok &= expect(
+        unknown_group_result.decision == KFSDecision::UNKNOWN,
+        "UNKNOWN group type should be UNKNOWN");
 
     return ok ? 0 : 1;
 }

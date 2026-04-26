@@ -52,6 +52,115 @@ cv::Rect clampDetectionToImage(
         std::max(0, y2 - y1));
 }
 
+cv::Rect clampRectToImage(
+    const cv::Rect& rect,
+    const cv::Size& image_size)
+{
+    const int x1 = std::clamp(rect.x, 0, image_size.width);
+    const int y1 = std::clamp(rect.y, 0, image_size.height);
+    const int x2 = std::clamp(rect.x + rect.width, 0, image_size.width);
+    const int y2 = std::clamp(rect.y + rect.height, 0, image_size.height);
+
+    return cv::Rect(
+        x1,
+        y1,
+        std::max(0, x2 - x1),
+        std::max(0, y2 - y1));
+}
+
+TeamColorResult filterByTeamColorImpl(
+    const cv::Mat& bgr_image,
+    const cv::Rect& roi,
+    TeamColor my_team,
+    const TeamColorFilterConfig& config)
+{
+    TeamColorResult result{
+        false,
+        TeamColor::UNKNOWN,
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0f,
+        0.0f};
+
+    if (bgr_image.empty()) {
+        return result;
+    }
+
+    const cv::Rect clamped_roi =
+        clampRectToImage(roi, bgr_image.size());
+
+    if (clamped_roi.width <= 0 || clamped_roi.height <= 0) {
+        return result;
+    }
+
+    const cv::Mat crop = bgr_image(clamped_roi);
+    if (crop.empty()) {
+        return result;
+    }
+
+    cv::Mat hsv_crop;
+    cv::cvtColor(crop, hsv_crop, cv::COLOR_BGR2HSV);
+    const cv::Scalar mean_hsv = cv::mean(hsv_crop);
+    result.mean_h = static_cast<float>(mean_hsv[0]);
+    result.mean_s = static_cast<float>(mean_hsv[1]);
+    result.mean_v = static_cast<float>(mean_hsv[2]);
+
+    cv::Mat red_mask_1;
+    cv::Mat red_mask_2;
+    cv::Mat red_mask;
+    cv::Mat blue_mask;
+
+    cv::inRange(
+        hsv_crop,
+        cv::Scalar(config.red_h_low_1, config.red_s_low, config.red_v_low),
+        cv::Scalar(config.red_h_high_1, 255, 255),
+        red_mask_1);
+    cv::inRange(
+        hsv_crop,
+        cv::Scalar(config.red_h_low_2, config.red_s_low, config.red_v_low),
+        cv::Scalar(config.red_h_high_2, 255, 255),
+        red_mask_2);
+    cv::bitwise_or(red_mask_1, red_mask_2, red_mask);
+
+    cv::inRange(
+        hsv_crop,
+        cv::Scalar(config.blue_h_low, config.blue_s_low, config.blue_v_low),
+        cv::Scalar(config.blue_h_high, 255, 255),
+        blue_mask);
+
+    const float crop_area = static_cast<float>(clamped_roi.area());
+    if (crop_area <= 0.0f) {
+        return result;
+    }
+
+    result.red_coverage =
+        static_cast<float>(cv::countNonZero(red_mask)) / crop_area;
+    result.blue_coverage =
+        static_cast<float>(cv::countNonZero(blue_mask)) / crop_area;
+
+    const bool red_dominant =
+        result.red_coverage >= result.blue_coverage;
+    result.dominant_coverage =
+        red_dominant ? result.red_coverage : result.blue_coverage;
+
+    if (result.dominant_coverage >= config.min_coverage_ratio) {
+        result.detected_team =
+            red_dominant ? TeamColor::RED : TeamColor::BLUE;
+        result.confidence = std::min(
+            1.0f,
+            static_cast<float>(result.dominant_coverage * config.confidence_scale));
+    }
+
+    result.matches_team =
+        result.detected_team == my_team &&
+        result.confidence >= config.min_match_confidence;
+
+    return result;
+}
+
 }  // namespace
 
 TeamColor parseTeamColor(const std::string& value)
@@ -89,91 +198,26 @@ TeamColorResult filterByTeamColor(
     TeamColor my_team,
     const TeamColorFilterConfig& config)
 {
-    TeamColorResult result{
-        false,
-        TeamColor::UNKNOWN,
-        0.0f,
-        0.0f,
-        0.0f,
-        0.0f,
-        0.0f,
-        0.0f,
-        0.0f};
-
-    if (bgr_image.empty()) {
-        return result;
-    }
-
     const cv::Rect roi =
         clampDetectionToImage(detection, bgr_image.size());
+    return filterByTeamColorImpl(
+        bgr_image,
+        roi,
+        my_team,
+        config);
+}
 
-    if (roi.width <= 0 || roi.height <= 0) {
-        return result;
-    }
-
-    const cv::Mat crop = bgr_image(roi);
-    if (crop.empty()) {
-        return result;
-    }
-
-    cv::Mat hsv_crop;
-    cv::cvtColor(crop, hsv_crop, cv::COLOR_BGR2HSV);
-    const cv::Scalar mean_hsv = cv::mean(hsv_crop);
-    result.mean_h = static_cast<float>(mean_hsv[0]);
-    result.mean_s = static_cast<float>(mean_hsv[1]);
-    result.mean_v = static_cast<float>(mean_hsv[2]);
-
-    cv::Mat red_mask_1;
-    cv::Mat red_mask_2;
-    cv::Mat red_mask;
-    cv::Mat blue_mask;
-
-    cv::inRange(
-        hsv_crop,
-        cv::Scalar(config.red_h_low_1, config.red_s_low, config.red_v_low),
-        cv::Scalar(config.red_h_high_1, 255, 255),
-        red_mask_1);
-    cv::inRange(
-        hsv_crop,
-        cv::Scalar(config.red_h_low_2, config.red_s_low, config.red_v_low),
-        cv::Scalar(config.red_h_high_2, 255, 255),
-        red_mask_2);
-    cv::bitwise_or(red_mask_1, red_mask_2, red_mask);
-
-    cv::inRange(
-        hsv_crop,
-        cv::Scalar(config.blue_h_low, config.blue_s_low, config.blue_v_low),
-        cv::Scalar(config.blue_h_high, 255, 255),
-        blue_mask);
-
-    const float crop_area = static_cast<float>(roi.area());
-    if (crop_area <= 0.0f) {
-        return result;
-    }
-
-    result.red_coverage =
-        static_cast<float>(cv::countNonZero(red_mask)) / crop_area;
-    result.blue_coverage =
-        static_cast<float>(cv::countNonZero(blue_mask)) / crop_area;
-
-    const bool red_dominant =
-        result.red_coverage >= result.blue_coverage;
-    result.dominant_coverage =
-        red_dominant ? result.red_coverage : result.blue_coverage;
-
-    if (result.dominant_coverage >= config.min_coverage_ratio) {
-        result.detected_team =
-            red_dominant ? TeamColor::RED : TeamColor::BLUE;
-        result.confidence = std::min(
-            1.0f,
-            static_cast<float>(result.dominant_coverage * config.confidence_scale));
-    }
-
-    result.matches_team =
-        result.detected_team == my_team &&
-        result.confidence >= config.min_match_confidence;
-
-    return result;
+TeamColorResult filterByTeamColor(
+    const cv::Mat& bgr_image,
+    const cv::Rect& roi,
+    TeamColor my_team,
+    const TeamColorFilterConfig& config)
+{
+    return filterByTeamColorImpl(
+        bgr_image,
+        roi,
+        my_team,
+        config);
 }
 
 }  // namespace abu_yolo_ros

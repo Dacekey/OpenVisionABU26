@@ -56,6 +56,12 @@ struct KFSInstance {
 struct KFSInstanceAggregatorConfig {
     bool enable_aggregation = true;
     bool debug_instances = true;
+    bool enable_instance_team_color_filter = true;
+    std::string instance_color_primary_bbox = "refined_bbox";
+    std::string instance_color_fallback_bbox = "expanded_bbox";
+    double instance_color_min_confidence = 0.30;
+    int instance_color_min_crop_area_px = 400;
+    bool debug_instance_color = false;
     bool draw_roi = true;
     std::vector<int> roi_color_bgr = {0, 255, 255};
     int roi_thickness = 2;

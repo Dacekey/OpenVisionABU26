@@ -54,4 +54,10 @@ TeamColorResult filterByTeamColor(
     TeamColor my_team,
     const TeamColorFilterConfig& config);
 
+TeamColorResult filterByTeamColor(
+    const cv::Mat& bgr_image,
+    const cv::Rect& roi,
+    TeamColor my_team,
+    const TeamColorFilterConfig& config);
+
 }  // namespace abu_yolo_ros

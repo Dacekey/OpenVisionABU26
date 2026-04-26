@@ -12,6 +12,8 @@
 #include <opencv2/opencv.hpp>
 #include <cv_bridge/cv_bridge.hpp>
 
+#include "abu_yolo_ros/msg/kfs_instance.hpp"
+#include "abu_yolo_ros/msg/kfs_instance_array.hpp"
 #include "abu_yolo_ros/decision_engine.hpp"
 #include "abu_yolo_ros/kfs_instance_aggregator.hpp"
 #include "abu_yolo_ros/team_color_filter.hpp"
@@ -72,10 +74,30 @@ public:
         // KFSInstanceAggregator parameters
         this->declare_parameter<bool>("kfs_instance_aggregation.enabled", true);
         this->declare_parameter<bool>("kfs_instance_aggregation.debug_instances", true);
+        this->declare_parameter<bool>("kfs_instance_aggregation.publish_instances", true);
+        this->declare_parameter<std::string>(
+            "kfs_instance_aggregation.instances_topic",
+            "/yolo/kfs_instances");
         this->declare_parameter<bool>("kfs_instance_aggregation.publish_debug_image", false);
         this->declare_parameter<std::string>(
             "kfs_instance_aggregation.debug_image_topic",
             "/yolo/kfs_instances/image_annotated");
+        this->declare_parameter<bool>("kfs_instance_aggregation.enable_instance_team_color_filter", true);
+        this->declare_parameter<std::string>(
+            "kfs_instance_aggregation.instance_color_primary_bbox",
+            "refined_bbox");
+        this->declare_parameter<std::string>(
+            "kfs_instance_aggregation.instance_color_fallback_bbox",
+            "expanded_bbox");
+        this->declare_parameter<double>(
+            "kfs_instance_aggregation.instance_color_min_confidence",
+            0.30);
+        this->declare_parameter<int>(
+            "kfs_instance_aggregation.instance_color_min_crop_area_px",
+            400);
+        this->declare_parameter<bool>(
+            "kfs_instance_aggregation.debug_instance_color",
+            false);
         this->declare_parameter<bool>("kfs_instance_aggregation.draw_roi", true);
         this->declare_parameter<std::vector<int64_t>>(
             "kfs_instance_aggregation.roi_color_bgr",
@@ -206,8 +228,28 @@ public:
             decision_config_.unknown_on_low_confidence);
         this->get_parameter("kfs_instance_aggregation.enabled", aggregator_config_.enable_aggregation);
         this->get_parameter("kfs_instance_aggregation.debug_instances", aggregator_config_.debug_instances);
+        this->get_parameter("kfs_instance_aggregation.publish_instances", kfs_publish_instances_);
+        this->get_parameter("kfs_instance_aggregation.instances_topic", kfs_instances_topic_);
         this->get_parameter("kfs_instance_aggregation.publish_debug_image", kfs_publish_debug_image_);
         this->get_parameter("kfs_instance_aggregation.debug_image_topic", kfs_debug_image_topic_);
+        this->get_parameter(
+            "kfs_instance_aggregation.enable_instance_team_color_filter",
+            aggregator_config_.enable_instance_team_color_filter);
+        this->get_parameter(
+            "kfs_instance_aggregation.instance_color_primary_bbox",
+            aggregator_config_.instance_color_primary_bbox);
+        this->get_parameter(
+            "kfs_instance_aggregation.instance_color_fallback_bbox",
+            aggregator_config_.instance_color_fallback_bbox);
+        this->get_parameter(
+            "kfs_instance_aggregation.instance_color_min_confidence",
+            aggregator_config_.instance_color_min_confidence);
+        this->get_parameter(
+            "kfs_instance_aggregation.instance_color_min_crop_area_px",
+            aggregator_config_.instance_color_min_crop_area_px);
+        this->get_parameter(
+            "kfs_instance_aggregation.debug_instance_color",
+            aggregator_config_.debug_instance_color);
         this->get_parameter("kfs_instance_aggregation.draw_roi", aggregator_config_.draw_roi);
         std::vector<int64_t> roi_color_bgr_param;
         this->get_parameter("kfs_instance_aggregation.roi_color_bgr", roi_color_bgr_param);
@@ -363,6 +405,19 @@ public:
             aggregator_config_.drop_ambiguous_clusters ? "true" : "false");
         RCLCPP_INFO(
             this->get_logger(),
+            "KFS instances topic: %s | topic=%s | type=abu_yolo_ros/msg/KfsInstanceArray",
+            (aggregator_config_.enable_aggregation &&
+             kfs_publish_instances_) ? "enabled" : "disabled",
+            kfs_instances_topic_.c_str());
+        RCLCPP_INFO(
+            this->get_logger(),
+            "KFS instance color: %s | primary=%s | fallback=%s | min_conf=%.2f",
+            aggregator_config_.enable_instance_team_color_filter ? "enabled" : "disabled",
+            aggregator_config_.instance_color_primary_bbox.c_str(),
+            aggregator_config_.instance_color_fallback_bbox.c_str(),
+            aggregator_config_.instance_color_min_confidence);
+        RCLCPP_INFO(
+            this->get_logger(),
             "KFS debug image: %s | topic=%s | draw_roi=%s",
             (aggregator_config_.enable_aggregation &&
              aggregator_config_.debug_instances &&
@@ -397,6 +452,13 @@ public:
                 "/yolo/detections",
                 qos
             );
+        kfs_instances_pub_ =
+            this->create_publisher<
+                abu_yolo_ros::msg::KfsInstanceArray
+            >(
+                kfs_instances_topic_,
+                qos
+            );
 
         kfs_debug_pub_ =
             this->create_publisher<sensor_msgs::msg::Image>(
@@ -407,6 +469,22 @@ public:
     }
 
 private:
+
+    struct InstanceColorEvaluation {
+        abu_yolo_ros::TeamColorResult result{
+            false,
+            abu_yolo_ros::TeamColor::UNKNOWN,
+            0.0F,
+            0.0F,
+            0.0F,
+            0.0F,
+            0.0F,
+            0.0F,
+            0.0F};
+        std::string source = "unavailable";
+        std::string fallback_note;
+        bool used_fallback = false;
+    };
 
     void imageCallback(
         const sensor_msgs::msg::Image::SharedPtr msg) {
@@ -465,9 +543,19 @@ private:
                 evaluateKFSInstances(
                     bgr,
                     detections);
-            maybeLogKFSInstances(kfs_instances);
+            const auto kfs_instance_colors =
+                evaluateKFSInstanceColors(
+                    bgr,
+                    kfs_instances);
+            maybeLogKFSInstances(
+                kfs_instances,
+                kfs_instance_colors);
             
             publishDetections(detections);
+            publishKFSInstances(
+                msg->header,
+                kfs_instances,
+                kfs_instance_colors);
 
             auto t2 = std::chrono::steady_clock::now();
             
@@ -600,11 +688,152 @@ private:
             this->get_logger(),
             *this->get_clock(),
             2000,
-            "Published %ld detections",
-            msg.detections.size()
+            "Published %ld symbol detections to %s",
+            msg.detections.size(),
+            detection_topic_.c_str()
         );
 
         detection_pub_->publish(msg);
+    }
+
+    vision_msgs::msg::BoundingBox2D toBoundingBox2D(
+        const cv::Rect& bbox) const
+    {
+        vision_msgs::msg::BoundingBox2D msg;
+        msg.center.position.x = bbox.x + bbox.width * 0.5;
+        msg.center.position.y = bbox.y + bbox.height * 0.5;
+        msg.center.theta = 0.0;
+        msg.size_x = bbox.width;
+        msg.size_y = bbox.height;
+        return msg;
+    }
+
+    const abu_yolo_ros::KFSCluster* findClusterById(int cluster_id) const
+    {
+        if (!aggregator_) {
+            return nullptr;
+        }
+
+        const auto& clusters = aggregator_->lastClusters();
+        for (const auto& cluster : clusters) {
+            if (cluster.cluster_id == cluster_id) {
+                return &cluster;
+            }
+        }
+        return nullptr;
+    }
+
+    float computeInstanceConfidence(
+        const abu_yolo_ros::KFSInstance& instance) const
+    {
+        if (!aggregator_) {
+            return 0.0F;
+        }
+
+        const auto& symbols = aggregator_->lastSymbols();
+        float best_confidence = 0.0F;
+        for (const int symbol_index : instance.symbol_indices) {
+            for (const auto& symbol : symbols) {
+                if (symbol.index == symbol_index) {
+                    best_confidence = std::max(best_confidence, symbol.confidence);
+                    break;
+                }
+            }
+        }
+
+        // TODO(dacekey): replace this placeholder with calibrated instance-level confidence aggregation.
+        return best_confidence;
+    }
+
+    abu_yolo_ros::KFSInstanceDecisionInput buildKFSInstanceDecisionInput(
+        const abu_yolo_ros::KFSInstance& instance,
+        const InstanceColorEvaluation& color_evaluation) const
+    {
+        abu_yolo_ros::KFSInstanceDecisionInput input;
+        input.group_type = abu_yolo_ros::kfsGroupTypeToString(instance.group_type);
+        input.symbol_confidence = computeInstanceConfidence(instance);
+        input.team_color_match = color_evaluation.result.matches_team;
+        input.color_confidence = color_evaluation.result.confidence;
+        input.color_mask_coverage = instance.color_mask_coverage;
+        input.bbox_quality = instance.bbox_quality.empty() ? "unknown" : instance.bbox_quality;
+        const auto* cluster = findClusterById(instance.cluster_id);
+        input.ambiguous = cluster ? cluster->ambiguous : false;
+        input.ambiguous_reason = cluster ? cluster->ambiguous_reason : "";
+        return input;
+    }
+
+    abu_yolo_ros::msg::KfsInstance toKfsInstanceMsg(
+        const abu_yolo_ros::KFSInstance& instance,
+        const InstanceColorEvaluation& color_evaluation,
+        const abu_yolo_ros::DecisionResult& decision_result) const
+    {
+        abu_yolo_ros::msg::KfsInstance msg;
+        msg.cluster_id = instance.cluster_id;
+        msg.group_type = abu_yolo_ros::kfsGroupTypeToString(instance.group_type);
+        msg.bbox = toBoundingBox2D(instance.refined_bbox);
+        msg.bbox_quality = instance.bbox_quality.empty() ? "unknown" : instance.bbox_quality;
+        msg.symbol_indices = instance.symbol_indices;
+        msg.class_names = instance.class_names;
+        msg.team_color = abu_yolo_ros::teamColorToString(my_team_);
+        msg.team_color_match = color_evaluation.result.matches_team;
+        msg.color_confidence = color_evaluation.result.confidence;
+        msg.color_mask_coverage = instance.color_mask_coverage;
+
+        const auto* cluster = findClusterById(instance.cluster_id);
+        msg.ambiguous = cluster ? cluster->ambiguous : false;
+        msg.ambiguous_reason = cluster ? cluster->ambiguous_reason : "";
+        msg.confidence = static_cast<float>(decision_result.final_confidence);
+        msg.decision = abu_yolo_ros::decisionToString(decision_result.decision);
+        return msg;
+    }
+
+    void publishKFSInstances(
+        const std_msgs::msg::Header& header,
+        const std::vector<abu_yolo_ros::KFSInstance>& instances,
+        const std::vector<InstanceColorEvaluation>& color_evaluations)
+    {
+        if (!aggregator_config_.enable_aggregation ||
+            !kfs_publish_instances_ ||
+            !kfs_instances_pub_) {
+            return;
+        }
+
+        abu_yolo_ros::msg::KfsInstanceArray msg;
+        msg.header = header;
+        msg.team_color = abu_yolo_ros::teamColorToString(my_team_);
+        msg.instances.reserve(instances.size());
+        for (std::size_t i = 0; i < instances.size(); ++i) {
+            const InstanceColorEvaluation fallback_evaluation;
+            const InstanceColorEvaluation& color_evaluation =
+                i < color_evaluations.size()
+                    ? color_evaluations[i]
+                    : fallback_evaluation;
+            const auto decision_input =
+                buildKFSInstanceDecisionInput(
+                    instances[i],
+                    color_evaluation);
+            const auto decision_result =
+                abu_yolo_ros::classifyKFSInstance(
+                    decision_input,
+                    decision_config_);
+            msg.instances.push_back(
+                toKfsInstanceMsg(
+                    instances[i],
+                    color_evaluation,
+                    decision_result));
+        }
+
+        kfs_instances_pub_->publish(msg);
+
+        if (aggregator_config_.debug_instances) {
+            RCLCPP_INFO_THROTTLE(
+                this->get_logger(),
+                *this->get_clock(),
+                2000,
+                "Published %ld KFS instances to %s",
+                msg.instances.size(),
+                kfs_instances_topic_.c_str());
+        }
     }
 
     std::vector<abu_yolo_ros::TeamColorResult> evaluateTeamColorResults(
@@ -745,10 +974,10 @@ private:
 
             if (i < decision_results.size()) {
                 const auto& result = decision_results[i];
-                stream << " decision="
+                stream << " symbol_decision="
                        << abu_yolo_ros::decisionToString(result.decision)
-                       << " final_conf=" << result.final_confidence
-                       << " reason=\"" << result.reason << "\"";
+                       << " symbol_final_conf=" << result.final_confidence
+                       << " symbol_reason=\"" << result.reason << "\"";
             }
         }
 
@@ -875,8 +1104,196 @@ private:
         return aggregator_->aggregate(bgr, symbols);
     }
 
+    static cv::Rect clampRectToImage(
+        const cv::Rect& rect,
+        const cv::Size& image_size)
+    {
+        const int x1 = std::clamp(rect.x, 0, image_size.width);
+        const int y1 = std::clamp(rect.y, 0, image_size.height);
+        const int x2 = std::clamp(rect.x + rect.width, 0, image_size.width);
+        const int y2 = std::clamp(rect.y + rect.height, 0, image_size.height);
+        return cv::Rect(
+            x1,
+            y1,
+            std::max(0, x2 - x1),
+            std::max(0, y2 - y1));
+    }
+
+    static float rectAreaRatio(
+        const cv::Rect& current,
+        const cv::Rect& original)
+    {
+        const float original_area =
+            static_cast<float>(std::max(0, original.area()));
+        if (original_area <= 1e-6F) {
+            return 0.0F;
+        }
+        return static_cast<float>(std::max(0, current.area())) / original_area;
+    }
+
+    cv::Rect selectClusterBBox(
+        const abu_yolo_ros::KFSCluster& cluster,
+        const std::string& source_name) const
+    {
+        if (source_name == "refined_bbox") {
+            return cluster.refined_bbox;
+        }
+        if (source_name == "expanded_bbox") {
+            return cluster.expanded_bbox;
+        }
+        if (source_name == "union_bbox") {
+            return cluster.union_bbox;
+        }
+        return cv::Rect();
+    }
+
+    bool isValidInstanceColorCrop(
+        const cv::Rect& requested_bbox,
+        const cv::Rect& clamped_bbox) const
+    {
+        if (requested_bbox.width <= 0 || requested_bbox.height <= 0) {
+            return false;
+        }
+        if (clamped_bbox.width <= 0 || clamped_bbox.height <= 0) {
+            return false;
+        }
+        if (clamped_bbox.area() < aggregator_config_.instance_color_min_crop_area_px) {
+            return false;
+        }
+        return rectAreaRatio(clamped_bbox, requested_bbox) >= 0.70F;
+    }
+
+    InstanceColorEvaluation evaluateInstanceColorForCluster(
+        const cv::Mat& bgr,
+        const abu_yolo_ros::KFSCluster& cluster) const
+    {
+        InstanceColorEvaluation evaluation;
+        if (!enable_team_color_filter_ ||
+            !aggregator_config_.enable_instance_team_color_filter ||
+            bgr.empty()) {
+            evaluation.fallback_note = "instance_team_color_disabled";
+            return evaluation;
+        }
+
+        const auto try_bbox_source =
+            [&](const std::string& source_name) {
+                InstanceColorEvaluation attempt;
+                attempt.source = source_name.empty() ? "unavailable" : source_name;
+                if (source_name.empty()) {
+                    attempt.fallback_note = "empty_bbox_source";
+                    return attempt;
+                }
+
+                const cv::Rect requested_bbox =
+                    selectClusterBBox(cluster, source_name);
+                if (requested_bbox.width <= 0 || requested_bbox.height <= 0) {
+                    attempt.fallback_note = source_name + "_invalid";
+                    return attempt;
+                }
+
+                const cv::Rect clamped_bbox =
+                    clampRectToImage(requested_bbox, bgr.size());
+                if (!isValidInstanceColorCrop(requested_bbox, clamped_bbox)) {
+                    attempt.fallback_note = source_name + "_crop_invalid";
+                    return attempt;
+                }
+
+                attempt.result =
+                    abu_yolo_ros::filterByTeamColor(
+                        bgr,
+                        clamped_bbox,
+                        my_team_,
+                        tcf_config_);
+                return attempt;
+            };
+
+        const auto primary =
+            try_bbox_source(aggregator_config_.instance_color_primary_bbox);
+        if (primary.result.confidence >= aggregator_config_.instance_color_min_confidence) {
+            return primary;
+        }
+
+        if (aggregator_config_.instance_color_fallback_bbox.empty() ||
+            aggregator_config_.instance_color_fallback_bbox ==
+                aggregator_config_.instance_color_primary_bbox) {
+            InstanceColorEvaluation result = primary;
+            if (result.fallback_note.empty() &&
+                result.source != "unavailable") {
+                std::ostringstream note;
+                note << result.source
+                     << " weak conf="
+                     << std::fixed
+                     << std::setprecision(2)
+                     << result.result.confidence;
+                result.fallback_note = note.str();
+            }
+            return result;
+        }
+
+        auto fallback =
+            try_bbox_source(aggregator_config_.instance_color_fallback_bbox);
+        fallback.used_fallback = true;
+
+        if (primary.source != "unavailable") {
+            std::ostringstream note;
+            if (!primary.fallback_note.empty()) {
+                note << primary.fallback_note;
+            } else {
+                note << primary.source
+                     << " weak conf="
+                     << std::fixed
+                     << std::setprecision(2)
+                     << primary.result.confidence;
+            }
+            note << " -> fallback " << fallback.source
+                 << " conf=" << std::fixed << std::setprecision(2)
+                 << fallback.result.confidence;
+            fallback.fallback_note = note.str();
+        }
+
+        if (fallback.result.confidence >= aggregator_config_.instance_color_min_confidence) {
+            return fallback;
+        }
+
+        if (primary.result.confidence >= fallback.result.confidence) {
+            InstanceColorEvaluation result = primary;
+            result.used_fallback = fallback.used_fallback;
+            if (result.fallback_note.empty()) {
+                result.fallback_note = fallback.fallback_note;
+            }
+            return result;
+        }
+
+        return fallback;
+    }
+
+    std::vector<InstanceColorEvaluation> evaluateKFSInstanceColors(
+        const cv::Mat& bgr,
+        const std::vector<abu_yolo_ros::KFSInstance>& instances) const
+    {
+        std::vector<InstanceColorEvaluation> evaluations;
+        evaluations.reserve(instances.size());
+
+        for (const auto& instance : instances) {
+            const auto* cluster = findClusterById(instance.cluster_id);
+            if (!cluster) {
+                InstanceColorEvaluation evaluation;
+                evaluation.fallback_note = "cluster_not_found";
+                evaluations.push_back(evaluation);
+                continue;
+            }
+            evaluations.push_back(
+                evaluateInstanceColorForCluster(
+                    bgr,
+                    *cluster));
+        }
+
+        return evaluations;
+    }
+
     void maybeLogKFSInstances(
-        const std::vector<abu_yolo_ros::KFSInstance>& instances)
+        const std::vector<abu_yolo_ros::KFSInstance>& instances,
+        const std::vector<InstanceColorEvaluation>& color_evaluations)
     {
         if (!aggregator_config_.debug_instances) {
             return;
@@ -901,9 +1318,35 @@ private:
                << " dropped_clusters=" << dropped_clusters.size();
 
         for (const auto& instance : instances) {
-            stream << "\n  C" << instance.cluster_id
+            const std::size_t instance_index =
+                static_cast<std::size_t>(&instance - instances.data());
+            const InstanceColorEvaluation* color_eval =
+                instance_index < color_evaluations.size()
+                    ? &color_evaluations[instance_index]
+                    : nullptr;
+            const InstanceColorEvaluation fallback_evaluation;
+            const InstanceColorEvaluation& effective_color_eval =
+                color_eval != nullptr ? *color_eval : fallback_evaluation;
+            const auto decision_input =
+                buildKFSInstanceDecisionInput(
+                    instance,
+                    effective_color_eval);
+            const auto decision_result =
+                abu_yolo_ros::classifyKFSInstance(
+                    decision_input,
+                    decision_config_);
+            stream << "\n  [[C" << instance.cluster_id << "]]"
                    << " group=" << abu_yolo_ros::kfsGroupTypeToString(
                                       instance.group_type)
+                   << " instance_decision=" << abu_yolo_ros::decisionToString(decision_result.decision)
+                   << " instance_final_conf=" << std::fixed << std::setprecision(2)
+                   << decision_result.final_confidence
+                   << " instance_reason=\"" << decision_result.reason << "\""
+                   << " team=" << abu_yolo_ros::teamColorToString(my_team_)
+                   << " color_match=" << (effective_color_eval.result.matches_team ? "true" : "false")
+                   << " color_conf=" << std::fixed << std::setprecision(2)
+                   << effective_color_eval.result.confidence
+                   << " color_source=" << effective_color_eval.source
                    << " symbols=[";
             for (std::size_t i = 0; i < instance.symbol_indices.size(); ++i) {
                 if (i > 0) {
@@ -926,6 +1369,10 @@ private:
                    << " quality=" << instance.bbox_quality
                    << " color_cov=" << std::fixed << std::setprecision(2)
                    << instance.color_mask_coverage;
+            if (aggregator_config_.debug_instance_color &&
+                !effective_color_eval.fallback_note.empty()) {
+                stream << "\n    color_debug " << effective_color_eval.fallback_note;
+            }
         }
 
         for (const auto& dropped : dropped_clusters) {
@@ -1070,23 +1517,29 @@ private:
         vision_msgs::msg::Detection2DArray
     >::SharedPtr detection_pub_;
     rclcpp::Publisher<
+        abu_yolo_ros::msg::KfsInstanceArray
+    >::SharedPtr kfs_instances_pub_;
+    rclcpp::Publisher<
         sensor_msgs::msg::Image>::SharedPtr kfs_debug_pub_;
 
     std::string model_path_;
     std::string class_names_path_;
     std::string input_topic_;
     std::string output_topic_;
+    std::string detection_topic_ = "/yolo/detections";
 
     bool use_gpu_;
     bool visualize_;
     bool log_timing_;
     bool debug_detections_;
     bool enable_team_color_filter_;
+    bool kfs_publish_instances_;
     bool kfs_publish_debug_image_;
 
     int skip_frames_;
     uint64_t frame_count_;
     std::string team_color_string_;
+    std::string kfs_instances_topic_;
     std::string kfs_debug_image_topic_;
     abu_yolo_ros::TeamColor my_team_;
     abu_yolo_ros::TeamColorFilterConfig tcf_config_;
