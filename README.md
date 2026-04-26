@@ -206,6 +206,8 @@ Expected behavior:
 - camera topic is active
 - YOLO node launches successfully
 - detections are published
+- `/yolo/kfs_instances/image_annotated` is available when `kfs_instance_aggregation.publish_debug_image=true`
+- the KFS debug image can also draw the aggregation ROI when `kfs_instance_aggregation.draw_roi=true`
 - system runs stably
 
 ---
@@ -249,7 +251,19 @@ OpenVisionABU26/
 ```
 /yolo/detections
 /yolo/image_annotated
+/yolo/kfs_instances/image_annotated
 ```
+
+`/yolo/kfs_instances/image_annotated` is a debug-only visualization topic for final KFS instance aggregation boxes. It can also draw the aggregation ROI overlay, and that ROI should match the actual filtering region used by the runtime aggregator. It does not change the existing `/yolo/detections` or `/yolo/image_annotated` outputs.
+
+To inspect it at runtime:
+
+```bash
+ros2 topic list | grep kfs
+rqt_image_view
+```
+
+In `rqt_image_view`, select `/yolo/kfs_instances/image_annotated`. The topic is published only when `kfs_instance_aggregation.enabled=true`, `kfs_instance_aggregation.debug_instances=true`, and `kfs_instance_aggregation.publish_debug_image=true`.
 
 ## Message Type
 

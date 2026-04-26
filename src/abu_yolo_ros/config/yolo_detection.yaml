@@ -26,7 +26,7 @@ yolo_detection_node:
     log_timing: false
     debug_detections: true
     enable_team_color_filter: true
-    team_color: "red"
+    team_color: "blue"
 
     # TeamColorFilter Thresholds
     red_h_low_1: 0
@@ -62,6 +62,106 @@ yolo_detection_node:
     require_team_color_match: true
     # low-confidence detections become UNKNOWN instead of AVOID.
     unknown_on_low_confidence: true
+
+    # KFSInstanceAggregator
+    # Internal-only KFS-level aggregation over YOLO symbol detections.
+    # Existing /yolo/detections and /yolo/image_annotated outputs remain unchanged.
+    kfs_instance_aggregation.enabled: true
+    kfs_instance_aggregation.debug_instances: true
+    kfs_instance_aggregation.publish_debug_image: true
+    kfs_instance_aggregation.debug_image_topic: "/yolo/kfs_instances/image_annotated"
+    kfs_instance_aggregation.draw_roi: true
+    kfs_instance_aggregation.roi_color_bgr: [0, 255, 255]
+    kfs_instance_aggregation.roi_thickness: 2
+
+    # Optional ROI filter to keep the central/front working area only.
+    kfs_instance_aggregation.enable_roi_filter: true
+    kfs_instance_aggregation.roi_x_min_norm: 0.10
+    kfs_instance_aggregation.roi_x_max_norm: 0.78
+    kfs_instance_aggregation.roi_y_min_norm: 0.22
+    kfs_instance_aggregation.roi_y_max_norm: 1.00
+
+    # Filters symbol detections before grouping.
+    kfs_instance_aggregation.min_symbol_height_px: 60.0
+    kfs_instance_aggregation.min_symbol_area_px: 4000.0
+    kfs_instance_aggregation.min_confidence: 0.25
+
+    # Normalizes thin/tall YOLO symbol bboxes before expansion.
+    kfs_instance_aggregation.use_square_symbol_bbox: true
+    kfs_instance_aggregation.square_symbol_scale: 1.0
+    kfs_instance_aggregation.max_square_side_ratio_of_image: 0.35
+
+    # Expands symbol/cluster geometry into an estimated KFS body search region.
+    kfs_instance_aggregation.expand_scale_x: 1.8
+    kfs_instance_aggregation.expand_scale_y: 1.8
+    kfs_instance_aggregation.max_expanded_area_ratio: 0.25
+
+    # Basic clustering controls.
+    kfs_instance_aggregation.cluster_distance_scale: 2.5
+    kfs_instance_aggregation.min_cluster_distance_px: 35.0
+    kfs_instance_aggregation.max_cluster_distance_px: 180.0
+    kfs_instance_aggregation.min_height_similarity_for_grouping: 0.60
+    kfs_instance_aggregation.min_area_similarity_for_grouping: 0.30
+    kfs_instance_aggregation.max_bottom_y_diff_ratio: 1.20
+    kfs_instance_aggregation.max_symbols_per_instance: 3
+
+    # Stable same-group second-stage merge only.
+    kfs_instance_aggregation.enable_basic_merge: true
+    kfs_instance_aggregation.merge_same_group_only: true
+    kfs_instance_aggregation.max_symbols_after_merge: 3
+    kfs_instance_aggregation.min_expanded_iou: 0.03
+    kfs_instance_aggregation.min_expanded_intersection_over_min_area: 0.12
+    kfs_instance_aggregation.max_expanded_gap_px: 40.0
+    kfs_instance_aggregation.min_color_mask_coverage_for_merge: 0.15
+    kfs_instance_aggregation.max_merged_union_width_scale: 2.2
+    kfs_instance_aggregation.max_merged_union_height_scale: 2.6
+
+    # Narrow fallback for same-group adjacent symbols when color mask is weak.
+    kfs_instance_aggregation.enable_low_mask_adjacent_same_group_fallback: true
+    kfs_instance_aggregation.low_mask_min_height_similarity: 0.55
+    kfs_instance_aggregation.low_mask_max_bottom_y_diff_ratio: 1.35
+    kfs_instance_aggregation.low_mask_max_gap_px: 45.0
+    kfs_instance_aggregation.low_mask_max_gap_ratio_to_symbol_height: 0.55
+    kfs_instance_aggregation.low_mask_max_merged_aspect_ratio: 2.2
+    kfs_instance_aggregation.low_mask_max_merged_width_scale: 2.2
+    kfs_instance_aggregation.low_mask_max_merged_height_scale: 2.6
+
+    # Safety: remove AMBIGUOUS clusters from final runtime KFS instances.
+    kfs_instance_aggregation.drop_ambiguous_clusters: true
+
+    # HSV profile and thresholds for body-mask refinement.
+    kfs_instance_aggregation.hsv_profile: competition_blue
+    kfs_instance_aggregation.red_h_low_1: 0
+    kfs_instance_aggregation.red_h_high_1: 12
+    kfs_instance_aggregation.red_h_low_2: 168
+    kfs_instance_aggregation.red_h_high_2: 180
+    kfs_instance_aggregation.red_s_low: 130
+    kfs_instance_aggregation.red_v_low: 80
+    kfs_instance_aggregation.blue_h_low: 90
+    kfs_instance_aggregation.blue_h_high: 140
+    kfs_instance_aggregation.blue_s_low: 40
+    kfs_instance_aggregation.blue_v_low: 80
+    kfs_instance_aggregation.dark_blue_h_low: 90
+    kfs_instance_aggregation.dark_blue_h_high: 140
+    kfs_instance_aggregation.dark_blue_s_low: 20
+    kfs_instance_aggregation.dark_blue_v_low: 15
+    kfs_instance_aggregation.dark_blue_v_high: 160
+
+    # Contour refinement over the selected HSV body mask.
+    kfs_instance_aggregation.contour_enabled: true
+    kfs_instance_aggregation.min_contour_area_px: 300
+    kfs_instance_aggregation.morphology_kernel_size: 5
+    kfs_instance_aggregation.morphology_iterations: 1
+    kfs_instance_aggregation.contour_selection: "closest_to_symbol_union_center"
+    kfs_instance_aggregation.contour_max_center_offset_ratio: 1.0
+    kfs_instance_aggregation.contour_min_refined_to_union_area_ratio: 0.5
+
+    # Conservative runtime defaults: edge visibility metadata on, neighbor clamp off.
+    kfs_instance_aggregation.neighbor_aware_clamp: false
+    kfs_instance_aggregation.neighbor_overlap_margin_px: 10
+    kfs_instance_aggregation.protect_other_cluster_symbols: true
+    kfs_instance_aggregation.neighbor_protection_bbox_source: geometry
+    kfs_instance_aggregation.edge_clip_margin_px: 3
 
     publish_debug_image: true
 

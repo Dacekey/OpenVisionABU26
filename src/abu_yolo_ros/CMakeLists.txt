@@ -78,6 +78,7 @@ add_executable(yolo_detection_node
   src/yolo_detector.cpp
   src/team_color_filter.cpp
   src/decision_engine.cpp
+  src/kfs_instance_aggregator.cpp
 )
 
 ament_target_dependencies(
