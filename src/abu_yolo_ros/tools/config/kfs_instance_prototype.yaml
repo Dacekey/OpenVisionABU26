@@ -62,35 +62,48 @@ bbox:
 
 roi_filter:
   enabled: true
-  # preset: "center_working_area"
-  preset: "none"
+  preset: "center_working_area"
+  # preset: "none"
   mode: "normalized_box"
-  x_min_norm: 0.0
+  # Change preset to "none" to specify a custom polygon instead of a box
+  x_min_norm: 0.1
   x_max_norm: 0.78
   y_min_norm: 0.22
   y_max_norm: 1.0
   polygon: []
 
 hsv_mask:
-  mode: "red_or_blue_or_dark_blue"
+  active_profile: competition_blue
 
-  red_h_low_1: 0
-  red_h_high_1: 12
-  red_h_low_2: 168
-  red_h_high_2: 180
-  red_s_low: 130
-  red_v_low: 80
+  profiles:
+    competition_blue:
+      description: "Default competition blue KFS body mask. Placeholder values; tune with hsv_calibration_viewer.py before competition."
+      mode: blue
+      blue_h_low: 90
+      blue_h_high: 140
+      blue_s_low: 40
+      blue_v_low: 80
 
-  blue_h_low: 90
-  blue_h_high: 140
-  blue_s_low: 40
-  blue_v_low: 80
+    red:
+      description: "Red-team / red-body fallback profile."
+      mode: red
+      red_h_low_1: 0
+      red_h_high_1: 12
+      red_h_low_2: 168
+      red_h_high_2: 180
+      red_s_low: 130
+      red_v_low: 80
 
-  dark_blue_h_low: 90
-  dark_blue_h_high: 140
-  dark_blue_s_low: 20
-  dark_blue_v_low: 15
-  dark_blue_v_high: 160
+    dark_blue_debug:
+      enabled: false
+      debug_only: true
+      description: "Debug-only dark-blue fallback for underexposed/offline images. Do not use as default competition profile unless explicitly needed."
+      mode: dark_blue
+      dark_blue_h_low: 90
+      dark_blue_h_high: 140
+      dark_blue_s_low: 20
+      dark_blue_v_low: 15
+      dark_blue_v_high: 160
 
 contour:
   enabled: true

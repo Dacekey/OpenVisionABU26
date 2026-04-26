@@ -194,11 +194,18 @@ Second-stage cluster merge:
 - That fallback only considers same-group adjacent clusters with strong geometry evidence, and it should be tuned carefully because overly permissive values can merge nearby KFS boxes.
 - This is offline experimental logic only and is not part of the runtime pipeline.
 
+HSV profiles:
+
+- `competition_blue` is now the default active HSV profile for the offline prototype.
+- `dark_blue_debug` is kept available but disabled by default and intended only for offline/debug/underexposed images.
+- Broad combinations such as `red_or_blue_or_dark_blue` are useful for exploratory offline testing, but should not be the default competition profile because they can admit shadows or dark background regions.
+- Fine-tune HSV values later with `tools/hsv_calibration_viewer.py` close to competition day. The current values remain placeholders and are not claimed to be final.
+
 Recommended first tuning attempt after v2:
 
 - use a stricter `bbox_size` range filter
 - relax area similarity slightly for perspective-distorted symbols
-- set `hsv_mask.mode = red_or_blue_or_dark_blue`
+- keep `hsv_mask.active_profile = competition_blue` for normal competition-oriented testing
 
 `dark_blue` is useful for navy or low-value blue KFS bodies under real lighting, where the normal blue mask may miss the cube body.
 

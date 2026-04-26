@@ -93,22 +93,44 @@ DEFAULT_CONFIG = {
         "polygon": [],
     },
     "hsv_mask": {
-        "mode": "red_or_blue_or_dark_blue",
-        "red_h_low_1": 0,
-        "red_h_high_1": 12,
-        "red_h_low_2": 168,
-        "red_h_high_2": 180,
-        "red_s_low": 130,
-        "red_v_low": 80,
-        "blue_h_low": 90,
-        "blue_h_high": 140,
-        "blue_s_low": 40,
-        "blue_v_low": 80,
-        "dark_blue_h_low": 90,
-        "dark_blue_h_high": 140,
-        "dark_blue_s_low": 20,
-        "dark_blue_v_low": 15,
-        "dark_blue_v_high": 160,
+        "active_profile": "competition_blue",
+        "profiles": {
+            "competition_blue": {
+                "description": (
+                    "Default competition blue KFS body mask. Placeholder values; "
+                    "tune with hsv_calibration_viewer.py before competition."
+                ),
+                "mode": "blue",
+                "blue_h_low": 90,
+                "blue_h_high": 140,
+                "blue_s_low": 40,
+                "blue_v_low": 80,
+            },
+            "red": {
+                "description": "Red-team / red-body fallback profile.",
+                "mode": "red",
+                "red_h_low_1": 0,
+                "red_h_high_1": 12,
+                "red_h_low_2": 168,
+                "red_h_high_2": 180,
+                "red_s_low": 130,
+                "red_v_low": 80,
+            },
+            "dark_blue_debug": {
+                "enabled": False,
+                "debug_only": True,
+                "description": (
+                    "Debug-only dark-blue fallback for underexposed/offline images. "
+                    "Do not use as default competition profile unless explicitly needed."
+                ),
+                "mode": "dark_blue",
+                "dark_blue_h_low": 90,
+                "dark_blue_h_high": 140,
+                "dark_blue_s_low": 20,
+                "dark_blue_v_low": 15,
+                "dark_blue_v_high": 160,
+            },
+        },
     },
     "contour": {
         "enabled": True,
@@ -313,6 +335,45 @@ def load_yaml_config(config_path: Optional[str]) -> Tuple[dict, Optional[str]]:
         return config, str(resolved_path)
 
     return deep_merge(config, loaded), str(resolved_path)
+
+
+def resolve_hsv_mask_config(config: dict):
+    section = config.get("hsv_mask", {})
+    if not isinstance(section, dict):
+        raise ValueError("hsv_mask config must be a mapping")
+
+    profiles = section.get("profiles")
+    active_profile = section.get("active_profile")
+    if isinstance(profiles, dict) and active_profile is not None:
+        if active_profile not in profiles:
+            raise ValueError(
+                f"hsv_mask.active_profile '{active_profile}' not found in hsv_mask.profiles"
+            )
+        profile = profiles[active_profile]
+        if not isinstance(profile, dict):
+            raise ValueError(
+                f"hsv_mask.profiles['{active_profile}'] must be a mapping"
+            )
+        if profile.get("debug_only", False) and not profile.get("enabled", True):
+            raise ValueError(
+                f"hsv_mask profile '{active_profile}' is debug_only and disabled"
+            )
+
+        resolved = copy.deepcopy(section)
+        resolved.update(profile)
+        resolved["resolved_profile"] = active_profile
+        resolved["resolved_from_profiles"] = True
+        config["hsv_mask"] = resolved
+        return
+
+    if "mode" in section:
+        section["resolved_profile"] = section.get("resolved_profile", "legacy_flat")
+        section["resolved_from_profiles"] = False
+        return
+
+    raise ValueError(
+        "hsv_mask config must define either active_profile/profiles or legacy flat mode fields"
+    )
 
 
 def apply_roi_preset(config: dict):
@@ -2430,6 +2491,11 @@ def main() -> int:
         )
         config_path = str(Path(args.config).expanduser())
 
+    try:
+        resolve_hsv_mask_config(config)
+    except ValueError as exc:
+        return fail(str(exc))
+
     apply_roi_preset(config)
     apply_config_to_args(args, config)
 
@@ -2481,7 +2547,11 @@ def main() -> int:
     )
     final_instances, dropped_clusters = filter_final_candidate_clusters(clusters, config)
 
-    print(f"Selected HSV mask mode: {config['hsv_mask']['mode']}")
+    print(
+        "Selected HSV mask profile: "
+        f"{config['hsv_mask'].get('resolved_profile', 'legacy_flat')} "
+        f"(mode={config['hsv_mask']['mode']})"
+    )
     print_symbol_logs(symbols)
     print("First-stage clusters:")
     print_cluster_logs(first_stage_clusters)

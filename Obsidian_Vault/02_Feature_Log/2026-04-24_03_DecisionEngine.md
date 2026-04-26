@@ -77,6 +77,62 @@
 - Design prioritizes semantic labels (`class_name`) over model-specific indices (`class_id`).
 - Decision results remain internal to the node to prevent breaking downstream consumers during the development/tuning phase.
 
-## 11. Next Step
-- Proceed to `BlockLocalizer` for 3D localization.
-- Evaluate the upgrade of the ROS message contract to expose `DecisionResult` to other nodes.
+## 12. KFS Instance Aggregation & Decision Tree (Offline Prototype)
+
+### A. Purpose
+The Decision Tree module is utilized post-YOLO detection to group disparate symbol observations into high-level KFS-level instances. The goal is to aggregate evidence to determine if a physical object is `REAL`, `FAKE`, `R1`, or `AMBIGUOUS`.
+
+### B. High-Level Pipeline
+1. **Symbol Detection:** YOLO identifies individual symbols (observations).
+2. **Preprocessing:** Symbols are filtered by ROI and normalized (square-normalized expansion) to stabilize geometry.
+3. **Region Generation:** Candidate KFS footprints are generated using geometry and expanded bounding boxes, supported by color-contour analysis.
+4. **Clustering/Merging:** Nearby and compatible symbols are merged based on spatial and semantic rules.
+5. **Aggregation:** Final clusters are evaluated and converted into `final_instances`.
+6. **Safety Filter:** Uncertain or conflicting clusters are classified as `AMBIGUOUS` and dropped from the actionable output if configured.
+
+### C. Decision Tree Logic
+The following logic is applied to every candidate cluster (containing one or more symbols):
+
+#### Step 1 — Validate Candidate Symbols
+- Map `class_id` to semantic `class_family` (REAL, FAKE, R1).
+- Preserve all metadata (confidence, source geometry, color diagnostics) for evidence weighting.
+
+#### Step 2 — Merge Decision (Compatibility Check)
+- **Spatial:** Check overlap, proximity, and gaps.
+- **Geometric:** Verify scale compatibility and face alignment.
+- **Hard Safety Gates:** Apply strict exclusion rules (e.g., maximum distance, incompatible scale).
+- **Ranking:** Use a scoring layer to select the best match among candidates that pass all hard gates.
+
+#### Step 3 — Cluster Classification
+- **IF** cluster only contains REAL symbols → **REAL**
+- **IF** cluster only contains FAKE symbols → **FAKE**
+- **IF** cluster contains R1 symbols → **R1**
+- **IF** cluster contains a mix of REAL and FAKE evidence → **AMBIGUOUS**
+
+#### Step 4 — Safety Handling
+- **IF** `drop_ambiguous_clusters` is enabled:
+  - Remove `AMBIGUOUS` clusters from `final_instances`.
+  - Log to `dropped_clusters` with reason `ambiguous_cluster`.
+- **Note:** This "Safety-First" approach prevents the robot from acting on uncertain data, prioritizing a better future viewpoint over a current high-risk decision.
+
+### D. Key Technical Improvements
+- **Semantic Classification:** Moved away from rigid `class_id` ranges to robust class-family rules.
+- **Geometry Stabilization:** Implemented square-normalized symbol bboxes before expansion to mitigate "bad expansion" from tall/thin detection boxes.
+- **Conflict Avoidance:** Added neighbor-clamped expansion to prevent expanded search areas from "swallowing" independent nearby KFS.
+- **Edge Case Robustness:** Added partial-visibility handling for frame borders and same-label neighbor merge support.
+- **Rich Diagnostics:** Separated output into `clusters`, `final_instances`, and `dropped_clusters` with detailed ranking score components.
+
+### E. Prototype vs. Runtime Status
+- **Validation Path:** This logic is currently implemented and validated within the offline prototype:
+  - `src/abu_yolo_ros/tools/kfs_instance_prototype.py`
+  - `src/abu_yolo_ros/tools/config/kfs_instance_prototype.yaml`
+- **Current State:** ROS runtime remains decoupled and unchanged for stability.
+- **Porting Plan:** The logic is considered mature (12/13 test cases passed) and is ready for C++ porting into the primary ROS node.
+
+### F. Validation Summary
+- **Dataset:** 13 representative competition-like images.
+- **Performance:** 12/13 cases successfully merged and classified.
+- **Edge Case:** Case 6 remains unmerged due to extreme depth/perspective ambiguity; dropping it is preferred over forcing a potentially incorrect merge.
+- **Commands:**
+  - `python3 -m py_compile src/abu_yolo_ros/tools/kfs_instance_prototype.py`
+  - `colcon build --packages-select abu_yolo_ros`
