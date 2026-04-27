@@ -180,3 +180,61 @@ yolo_detection_node:
     publish_debug_image: true
 
     publish_detections: true
+
+kfs_3d_localizer_node:
+
+  ros__parameters:
+
+    kfs_3d_localizer.enabled: true
+    kfs_3d_localizer.input_topic: "/yolo/kfs_instances"
+    kfs_3d_localizer.output_topic: "/yolo/kfs_instances_localized"
+    kfs_3d_localizer.debug: true
+
+    kfs_3d_localizer.frames.robot_frame: "base_link"
+    kfs_3d_localizer.frames.camera_frame: "camera"
+
+    # Resolution runtime parameters for projection and distance estimation.
+    kfs_3d_localizer.image.width: 1280
+    kfs_3d_localizer.image.height: 720
+
+    # Placeholder intrinsics until real camera calibration is available.
+    # IMX219-160 likely needs proper fisheye calibration because of its wide FOV.
+    # Camera matrix or Camera intrinsics:
+    kfs_3d_localizer.camera_matrix.fx: 900.0
+    kfs_3d_localizer.camera_matrix.fy: 900.0
+    kfs_3d_localizer.camera_matrix.cx: 640.0
+    kfs_3d_localizer.camera_matrix.cy: 360.0
+
+    # Supported distortion models: none | pinhole | fisheye
+    # Only the selected projection point is undistorted at runtime for efficiency.
+    kfs_3d_localizer.distortion.model: "none"
+    kfs_3d_localizer.distortion.pinhole_coeffs: [0.0, 0.0, 0.0, 0.0, 0.0]
+    kfs_3d_localizer.distortion.fisheye_coeffs: [0.0, 0.0, 0.0, 0.0]
+
+    # Camera pose in robot frame. Rotation order in code is yaw(Z) * pitch(Y) * roll(X).
+    # Translation units in mm.
+    kfs_3d_localizer.camera_pose_robot.x_mm: 0.0
+    kfs_3d_localizer.camera_pose_robot.y_mm: 0.0
+    kfs_3d_localizer.camera_pose_robot.z_mm: 300.0
+    # Rotation units in degrees for easier configuration; converted to radians in code.
+    kfs_3d_localizer.camera_pose_robot.roll_deg: 0.0
+    kfs_3d_localizer.camera_pose_robot.pitch_deg: -20.0
+    kfs_3d_localizer.camera_pose_robot.yaw_deg: 0.0
+
+    # bottom_center is primary because it best approximates ground contact.
+    # center is fallback if bottom_center becomes invalid.
+    kfs_3d_localizer.projection.primary_point: "bottom_center"
+    kfs_3d_localizer.projection.fallback_point: "center"
+    kfs_3d_localizer.projection.clamp_to_image: true
+    kfs_3d_localizer.projection.bottom_center_y_offset_ratio: 0.0
+
+    # Fixed plane height is a placeholder for the first runtime localizer.
+    # Block-height / plane-height inference will be added later.
+    kfs_3d_localizer.plane.mode: "fixed"
+    kfs_3d_localizer.plane.default_z_height_mm: 0.0
+    kfs_3d_localizer.plane.valid_z_heights_mm: [0.0, 200.0, 400.0, 600.0]
+
+    kfs_3d_localizer.validation.min_distance_mm: 100.0
+    kfs_3d_localizer.validation.max_distance_mm: 3000.0
+    kfs_3d_localizer.validation.max_abs_y_mm: 2000.0
+    kfs_3d_localizer.validation.reject_if_ray_parallel: true

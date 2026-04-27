@@ -207,6 +207,7 @@ Expected behavior:
 - YOLO node launches successfully
 - detections are published
 - `/yolo/kfs_instances` is available as `abu_yolo_ros/msg/KfsInstanceArray` when `kfs_instance_aggregation.publish_instances=true`
+- `/yolo/kfs_instances_localized` is available as `abu_yolo_ros/msg/LocalizedKfsInstanceArray` when `kfs_3d_localizer.enabled=true`
 - `/yolo/kfs_instances/image_annotated` is available when `kfs_instance_aggregation.publish_debug_image=true`
 - the KFS debug image can also draw the aggregation ROI when `kfs_instance_aggregation.draw_roi=true`
 - system runs stably
@@ -252,6 +253,7 @@ OpenVisionABU26/
 ```
 /yolo/detections
 /yolo/kfs_instances
+/yolo/kfs_instances_localized
 /yolo/image_annotated
 /yolo/kfs_instances/image_annotated
 ```
@@ -261,6 +263,10 @@ OpenVisionABU26/
 `/yolo/kfs_instances` is the KFS-level structured runtime output and uses the message type `abu_yolo_ros/msg/KfsInstanceArray`.
 
 The KFS instance publisher now evaluates team color at the instance level using the final KFS crop, with `refined_bbox` as the primary source and `expanded_bbox` as fallback when needed.
+
+`/yolo/kfs_instances_localized` is the first OpenVision-v3 KFS 3D localization output and uses the message type `abu_yolo_ros/msg/LocalizedKfsInstanceArray`.
+
+The standalone localizer uses `bottom_center` as the primary projection point and `center` as fallback, supports `none`, `pinhole`, and `fisheye` point undistortion modes, transforms `ray_camera -> ray_robot`, and intersects that ray with a fixed Z plane. Plane-height inference is placeholder-only for now and still falls back to fixed plane mode.
 
 `/yolo/kfs_instances/image_annotated` remains a debug-only visualization topic for final KFS instance aggregation boxes. It can also draw the aggregation ROI overlay, and that ROI should match the actual filtering region used by the runtime aggregator. It does not change the existing `/yolo/detections` or `/yolo/image_annotated` outputs.
 

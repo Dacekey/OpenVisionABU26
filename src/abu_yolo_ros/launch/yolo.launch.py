@@ -30,5 +30,13 @@ def generate_launch_description():
             name="yolo_detection_node",
             output="screen",
             parameters=[config_file]
+        ),
+
+        Node(
+            package="abu_yolo_ros",
+            executable="kfs_3d_localizer_node",
+            name="kfs_3d_localizer_node",
+            output="screen",
+            parameters=[config_file]
         )
     ])

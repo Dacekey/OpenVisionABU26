@@ -1,0 +1,25 @@
+abu_yolo_ros/KfsInstance source_instance
+
+bool localized
+string localization_status
+string localization_quality
+string failure_reason
+
+geometry_msgs/Point position_robot_mm
+float32 distance_mm
+float32 bearing_deg
+
+string projection_point_mode
+float32 projection_u
+float32 projection_v
+
+float32 plane_z_height_mm
+string plane_height_source
+
+float32 ray_camera_x
+float32 ray_camera_y
+float32 ray_camera_z
+
+float32 ray_robot_x
+float32 ray_robot_y
+float32 ray_robot_z

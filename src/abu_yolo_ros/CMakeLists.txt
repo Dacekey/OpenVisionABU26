@@ -11,6 +11,7 @@ find_package(ament_cmake REQUIRED)
 find_package(rclcpp REQUIRED)
 find_package(sensor_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
+find_package(geometry_msgs REQUIRED)
 find_package(OpenCV REQUIRED)
 find_package(cv_bridge REQUIRED)
 find_package(vision_msgs REQUIRED)
@@ -39,7 +40,9 @@ link_directories(${ONNXRUNTIME_DIR}/lib)
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/KfsInstance.msg"
   "msg/KfsInstanceArray.msg"
-  DEPENDENCIES std_msgs vision_msgs
+  "msg/LocalizedKfsInstance.msg"
+  "msg/LocalizedKfsInstanceArray.msg"
+  DEPENDENCIES std_msgs vision_msgs geometry_msgs
 )
 
 # Image Passthrough Node
@@ -110,6 +113,30 @@ target_link_libraries(
 
 install(TARGETS
   yolo_detection_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
+# KFS 3D Localizer Node
+add_executable(kfs_3d_localizer_node
+  src/kfs_3d_localizer_node.cpp
+)
+
+ament_target_dependencies(
+  kfs_3d_localizer_node
+  rclcpp
+  std_msgs
+  geometry_msgs
+  vision_msgs
+)
+
+target_link_libraries(
+  kfs_3d_localizer_node
+  ${OpenCV_LIBS}
+  ${cpp_typesupport_target}
+)
+
+install(TARGETS
+  kfs_3d_localizer_node
   DESTINATION lib/${PROJECT_NAME}
 )
 
