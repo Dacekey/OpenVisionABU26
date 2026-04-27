@@ -228,11 +228,28 @@ kfs_3d_localizer_node:
     kfs_3d_localizer.projection.clamp_to_image: true
     kfs_3d_localizer.projection.bottom_center_y_offset_ratio: 0.0
 
-    # Fixed plane height is a placeholder for the first runtime localizer.
-    # Block-height / plane-height inference will be added later.
-    kfs_3d_localizer.plane.mode: "fixed"
+    # Active mode for ray-plane intersection.
+    # Current stable mode: fixed.
+    # Future preferred mode: block_map.
+    # instance_hint is intentionally postponed because color/type-based height inference can be unstable.
+    kfs_3d_localizer.plane.mode: "fixed"  # fixed | block_map | instance_hint
+
+    # Placeholder fixed plane height until real robot/camera calibration and block-map integration.
     kfs_3d_localizer.plane.default_z_height_mm: 0.0
+
+    # Valid Meihua/block plane heights. Used now for validation/debug and later for block_map snapping.
     kfs_3d_localizer.plane.valid_z_heights_mm: [0.0, 200.0, 400.0, 600.0]
+
+    # Future block-map integration placeholder.
+    kfs_3d_localizer.plane.block_map.enabled: false
+    kfs_3d_localizer.plane.block_map.source_topic: ""
+    kfs_3d_localizer.plane.block_map.fallback_to_fixed: true
+    kfs_3d_localizer.plane.block_map.snap_to_valid_height: true
+    kfs_3d_localizer.plane.block_map.max_height_snap_error_mm: 80.0
+
+    # Future instance-hint mode placeholder. Disabled/postponed by design.
+    kfs_3d_localizer.plane.instance_hint.enabled: false
+    kfs_3d_localizer.plane.instance_hint.fallback_to_fixed: true
 
     kfs_3d_localizer.validation.min_distance_mm: 100.0
     kfs_3d_localizer.validation.max_distance_mm: 3000.0

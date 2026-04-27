@@ -1,4 +1,5 @@
 #include <cmath>
+#include <iomanip>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -124,6 +125,13 @@ public:
         this->declare_parameter<std::vector<double>>(
             "kfs_3d_localizer.plane.valid_z_heights_mm",
             std::vector<double>{0.0, 200.0, 400.0, 600.0});
+        this->declare_parameter<bool>("kfs_3d_localizer.plane.block_map.enabled", false);
+        this->declare_parameter<std::string>("kfs_3d_localizer.plane.block_map.source_topic", "");
+        this->declare_parameter<bool>("kfs_3d_localizer.plane.block_map.fallback_to_fixed", true);
+        this->declare_parameter<bool>("kfs_3d_localizer.plane.block_map.snap_to_valid_height", true);
+        this->declare_parameter<double>("kfs_3d_localizer.plane.block_map.max_height_snap_error_mm", 80.0);
+        this->declare_parameter<bool>("kfs_3d_localizer.plane.instance_hint.enabled", false);
+        this->declare_parameter<bool>("kfs_3d_localizer.plane.instance_hint.fallback_to_fixed", true);
 
         this->declare_parameter<double>("kfs_3d_localizer.validation.min_distance_mm", 100.0);
         this->declare_parameter<double>("kfs_3d_localizer.validation.max_distance_mm", 3000.0);
@@ -171,6 +179,17 @@ public:
         this->get_parameter("kfs_3d_localizer.plane.mode", plane_mode_);
         this->get_parameter("kfs_3d_localizer.plane.default_z_height_mm", default_plane_z_height_mm_);
         this->get_parameter("kfs_3d_localizer.plane.valid_z_heights_mm", valid_z_heights_mm_);
+        this->get_parameter("kfs_3d_localizer.plane.block_map.enabled", block_map_enabled_);
+        this->get_parameter("kfs_3d_localizer.plane.block_map.source_topic", block_map_source_topic_);
+        this->get_parameter("kfs_3d_localizer.plane.block_map.fallback_to_fixed", block_map_fallback_to_fixed_);
+        this->get_parameter("kfs_3d_localizer.plane.block_map.snap_to_valid_height", block_map_snap_to_valid_height_);
+        this->get_parameter(
+            "kfs_3d_localizer.plane.block_map.max_height_snap_error_mm",
+            block_map_max_height_snap_error_mm_);
+        this->get_parameter("kfs_3d_localizer.plane.instance_hint.enabled", instance_hint_enabled_);
+        this->get_parameter(
+            "kfs_3d_localizer.plane.instance_hint.fallback_to_fixed",
+            instance_hint_fallback_to_fixed_);
 
         this->get_parameter("kfs_3d_localizer.validation.min_distance_mm", min_distance_mm_);
         this->get_parameter("kfs_3d_localizer.validation.max_distance_mm", max_distance_mm_);
@@ -238,11 +257,23 @@ public:
             fallback_point_mode_.c_str(),
             distortion_model_.c_str(),
             plane_mode_.c_str());
-        if (plane_mode_ != "fixed") {
+        RCLCPP_INFO(
+            this->get_logger(),
+            "KFS 3D plane: mode=%s | default_z=%.1fmm | valid_heights=%s | block_map_enabled=%s | block_map_implemented=false | instance_hint_enabled=%s",
+            plane_mode_.c_str(),
+            default_plane_z_height_mm_,
+            joinHeights(valid_z_heights_mm_).c_str(),
+            block_map_enabled_ ? "true" : "false",
+            instance_hint_enabled_ ? "true" : "false");
+        if (plane_mode_ == "instance_hint" || instance_hint_enabled_) {
             RCLCPP_WARN(
                 this->get_logger(),
-                "Plane mode '%s' is not implemented yet; runtime will fall back to fixed plane height",
-                plane_mode_.c_str());
+                "plane.mode=instance_hint is postponed; runtime will fall back to fixed plane height");
+        }
+        if (plane_mode_ == "block_map") {
+            RCLCPP_WARN(
+                this->get_logger(),
+                "plane.mode=block_map selected but block-map provider is not implemented; runtime will fall back to fixed plane height");
         }
     }
 
@@ -253,6 +284,11 @@ private:
         float u = 0.0F;
         float v = 0.0F;
         std::string failure_reason;
+    };
+
+    struct PlaneSelection {
+        double z_height_mm = 0.0;
+        std::string source = "fixed";
     };
 
     void normalizeCoeffVector(std::vector<double>& values, std::size_t expected_size)
@@ -307,6 +343,7 @@ private:
                                << localized.distance_mm
                                << " bearing=" << localized.bearing_deg
                                << " plane_z=" << localized.plane_z_height_mm
+                               << " plane_source=" << localized.plane_height_source
                                << " point=" << localized.projection_point_mode
                                << " quality=" << localized.localization_quality;
                     } else {
@@ -365,13 +402,9 @@ private:
         localized.ray_robot_y = static_cast<float>(ray_robot[1]);
         localized.ray_robot_z = static_cast<float>(ray_robot[2]);
 
-        double plane_z_height_mm = default_plane_z_height_mm_;
-        std::string plane_height_source = "fixed";
-        if (plane_mode_ != "fixed") {
-            plane_height_source = "fixed";
-        }
-        localized.plane_z_height_mm = static_cast<float>(plane_z_height_mm);
-        localized.plane_height_source = plane_height_source;
+        const PlaneSelection plane_selection = selectPlaneHeight();
+        localized.plane_z_height_mm = static_cast<float>(plane_selection.z_height_mm);
+        localized.plane_height_source = plane_selection.source;
 
         if (reject_if_ray_parallel_ && std::abs(ray_robot[2]) <= kEpsilon) {
             return failLocalized(localized, "ray_parallel_to_plane", "ray_parallel_to_plane");
@@ -380,7 +413,7 @@ private:
             return failLocalized(localized, "ray_parallel_to_plane", "ray_parallel_to_plane");
         }
 
-        const double t = (plane_z_height_mm - camera_origin_robot_[2]) / ray_robot[2];
+        const double t = (plane_selection.z_height_mm - camera_origin_robot_[2]) / ray_robot[2];
         if (!std::isfinite(t) || t <= 0.0) {
             return failLocalized(localized, "intersection_behind_camera", "intersection_behind_camera");
         }
@@ -545,6 +578,81 @@ private:
         return output;
     }
 
+    std::string joinHeights(const std::vector<double>& heights) const
+    {
+        std::ostringstream stream;
+        stream << "[";
+        for (std::size_t i = 0; i < heights.size(); ++i) {
+            if (i > 0) {
+                stream << ", ";
+            }
+            stream << std::fixed << std::setprecision(1) << heights[i];
+        }
+        stream << "]";
+        return stream.str();
+    }
+
+    PlaneSelection selectPlaneHeight() const
+    {
+        PlaneSelection selection;
+        selection.z_height_mm = default_plane_z_height_mm_;
+        selection.source = "fixed";
+
+        if (plane_mode_ == "fixed") {
+            return selection;
+        }
+
+        if (plane_mode_ == "instance_hint") {
+            warnInstanceHintFallback();
+            selection.source = "fixed_fallback_from_instance_hint";
+            return selection;
+        }
+
+        if (plane_mode_ == "block_map") {
+            warnBlockMapFallback();
+            selection.source = "fixed_fallback_from_block_map";
+            return selection;
+        }
+
+        warnUnknownPlaneModeFallback();
+        selection.source = "fixed_fallback_from_unknown_mode";
+        return selection;
+    }
+
+    void warnInstanceHintFallback() const
+    {
+        if (warned_instance_hint_fallback_) {
+            return;
+        }
+        RCLCPP_WARN(
+            this->get_logger(),
+            "plane.mode=instance_hint is postponed; falling back to fixed plane height");
+        warned_instance_hint_fallback_ = true;
+    }
+
+    void warnBlockMapFallback() const
+    {
+        if (warned_block_map_fallback_) {
+            return;
+        }
+        RCLCPP_WARN(
+            this->get_logger(),
+            "plane.mode=block_map selected but block-map provider is not implemented; falling back to fixed plane height");
+        warned_block_map_fallback_ = true;
+    }
+
+    void warnUnknownPlaneModeFallback() const
+    {
+        if (warned_unknown_plane_mode_fallback_) {
+            return;
+        }
+        RCLCPP_WARN(
+            this->get_logger(),
+            "plane.mode=%s is unknown; falling back to fixed plane height",
+            plane_mode_.c_str());
+        warned_unknown_plane_mode_fallback_ = true;
+    }
+
     bool enabled_ = true;
     bool debug_ = true;
     bool clamp_to_image_ = true;
@@ -557,6 +665,7 @@ private:
     double cy_ = 360.0;
     double bottom_center_y_offset_ratio_ = 0.0;
     double default_plane_z_height_mm_ = 0.0;
+    double block_map_max_height_snap_error_mm_ = 80.0;
     double min_distance_mm_ = 100.0;
     double max_distance_mm_ = 3000.0;
     double max_abs_y_mm_ = 2000.0;
@@ -569,10 +678,21 @@ private:
     std::string primary_point_mode_;
     std::string fallback_point_mode_;
     std::string plane_mode_;
+    std::string block_map_source_topic_;
 
     std::vector<double> pinhole_coeffs_;
     std::vector<double> fisheye_coeffs_;
     std::vector<double> valid_z_heights_mm_;
+
+    bool block_map_enabled_ = false;
+    bool block_map_fallback_to_fixed_ = true;
+    bool block_map_snap_to_valid_height_ = true;
+    bool instance_hint_enabled_ = false;
+    bool instance_hint_fallback_to_fixed_ = true;
+
+    mutable bool warned_instance_hint_fallback_ = false;
+    mutable bool warned_block_map_fallback_ = false;
+    mutable bool warned_unknown_plane_mode_fallback_ = false;
 
     cv::Vec3d camera_origin_robot_{0.0, 0.0, 300.0};
     cv::Matx33d rotation_robot_camera_ = cv::Matx33d::eye();

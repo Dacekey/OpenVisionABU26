@@ -266,7 +266,15 @@ The KFS instance publisher now evaluates team color at the instance level using 
 
 `/yolo/kfs_instances_localized` is the first OpenVision-v3 KFS 3D localization output and uses the message type `abu_yolo_ros/msg/LocalizedKfsInstanceArray`.
 
-The standalone localizer uses `bottom_center` as the primary projection point and `center` as fallback, supports `none`, `pinhole`, and `fisheye` point undistortion modes, transforms `ray_camera -> ray_robot`, and intersects that ray with a fixed Z plane. Plane-height inference is placeholder-only for now and still falls back to fixed plane mode.
+The standalone localizer uses `bottom_center` as the primary projection point and `center` as fallback, supports `none`, `pinhole`, and `fisheye` point undistortion modes, transforms `ray_camera -> ray_robot`, and intersects that ray with a plane height selection stage.
+
+Current plane-height design:
+
+- `fixed` is the only active stable mode right now.
+- valid Meihua heights are `0`, `200`, `400`, and `600` mm.
+- `instance_hint` is intentionally postponed because visual color/type-based height inference may be unreliable.
+- `block_map` is the preferred future mode once a BlockLocalizer / board-map provider exists.
+- until that provider exists, `block_map` still falls back to fixed plane height.
 
 `/yolo/kfs_instances/image_annotated` remains a debug-only visualization topic for final KFS instance aggregation boxes. It can also draw the aggregation ROI overlay, and that ROI should match the actual filtering region used by the runtime aggregator. It does not change the existing `/yolo/detections` or `/yolo/image_annotated` outputs.
 

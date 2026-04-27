@@ -210,3 +210,114 @@ Recommended first tuning attempt after v2:
 `dark_blue` is useful for navy or low-value blue KFS bodies under real lighting, where the normal blue mask may miss the cube body.
 
 Outputs are written under `tools/kfs_instance_debug` by default. The separate experimental config lives at `tools/config/kfs_instance_prototype.yaml`. The tool does not modify ROS topics, message types, runtime config, TeamColorFilter, DecisionEngine, or launch files.
+
+## Camera Calibration Tool
+
+This standalone offline calibration CLI estimates camera intrinsics and distortion for the OpenVision-v3 KFS 3D localizer. It is intended to calibrate the real Jetson Nano + IMX219-160 camera setup later, after calibration images are captured.
+
+Why this matters:
+
+- The runtime localizer already supports `none`, `pinhole`, and `fisheye` distortion modes.
+- The IMX219-160 likely has a wide field of view with strong barrel/fisheye distortion.
+- Fisheye calibration is therefore the expected first choice, while pinhole remains useful as a comparison or fallback.
+
+The tool does not require ROS runtime to run.
+
+### Required calibration images
+
+Use a printed chessboard pattern and capture at least `20-30+` sharp images with:
+
+- different positions across the image
+- different tilts and rotations
+- different distances from the camera
+- good lighting
+- minimal motion blur
+- coverage of both the image center and edges
+- the same resolution and camera mode intended for runtime whenever possible
+
+### Example fisheye command
+
+```bash
+python3 tools/calibrate_camera.py \
+  --images "/path/to/calibration_images/*.jpg" \
+  --model fisheye \
+  --board-cols 9 \
+  --board-rows 6 \
+  --square-size-mm 25.0 \
+  --output calibration_output/imx219_fisheye.yaml \
+  --preview-dir calibration_output/fisheye_preview \
+  --export-localizer-snippet
+```
+
+### Example pinhole command
+
+```bash
+python3 tools/calibrate_camera.py \
+  --images "/path/to/calibration_images/*.jpg" \
+  --model pinhole \
+  --board-cols 9 \
+  --board-rows 6 \
+  --square-size-mm 25.0 \
+  --output calibration_output/imx219_pinhole.yaml \
+  --preview-dir calibration_output/pinhole_preview
+```
+
+### Runtime resolution note
+
+Calibration should ideally use the same image resolution and camera mode as runtime.
+
+If images are captured at one resolution but the localizer will run at another, use:
+
+```bash
+--resize-width 1280 --resize-height 720
+```
+
+The tool will:
+
+- keep distortion coefficients unchanged
+- scale `fx`, `fy`, `cx`, and `cy` to the requested runtime size
+- report both the original calibration image size and the scaled runtime size
+
+### What the tool outputs
+
+The output YAML contains:
+
+- calibration metadata
+- valid image count
+- reprojection error
+- camera intrinsics
+- distortion coefficients
+- skipped image records
+- a ready-to-copy `kfs_3d_localizer` snippet
+
+Supported calibration models:
+
+- `fisheye`
+- `pinhole`
+
+The tool does not calibrate runtime extrinsics:
+
+- `camera_pose_robot.x_mm`
+- `camera_pose_robot.y_mm`
+- `camera_pose_robot.z_mm`
+- `camera_pose_robot.roll_deg`
+- `camera_pose_robot.pitch_deg`
+- `camera_pose_robot.yaw_deg`
+
+These must be measured or calibrated separately later.
+
+### Preview output
+
+If `--preview-dir` is provided, the tool saves:
+
+- chessboard corner detection previews
+- skipped-image previews with a reason label
+- a few undistorted sample images
+
+### How to use the result
+
+1. Run the calibration tool offline on real chessboard images from the target camera.
+2. Compare fisheye and pinhole reprojection errors if needed.
+3. Open the generated YAML.
+4. Copy the `kfs_3d_localizer` snippet into `config/yolo_detection.yaml`.
+5. Keep camera extrinsics as a separate follow-up calibration step.
