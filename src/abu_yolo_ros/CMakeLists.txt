@@ -140,6 +140,30 @@ install(TARGETS
   DESTINATION lib/${PROJECT_NAME}
 )
 
+# KFS Localization Stabilizer Node
+add_executable(kfs_localization_stabilizer_node
+  src/kfs_localization_stabilizer_node.cpp
+)
+
+ament_target_dependencies(
+  kfs_localization_stabilizer_node
+  rclcpp
+  std_msgs
+  geometry_msgs
+  vision_msgs
+)
+
+target_link_libraries(
+  kfs_localization_stabilizer_node
+  ${OpenCV_LIBS}
+  ${cpp_typesupport_target}
+)
+
+install(TARGETS
+  kfs_localization_stabilizer_node
+  DESTINATION lib/${PROJECT_NAME}
+)
+
 install(
   DIRECTORY include/
   DESTINATION include

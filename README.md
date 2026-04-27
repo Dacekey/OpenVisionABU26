@@ -254,6 +254,7 @@ OpenVisionABU26/
 /yolo/detections
 /yolo/kfs_instances
 /yolo/kfs_instances_localized
+/yolo/kfs_instances_stabilized
 /yolo/image_annotated
 /yolo/kfs_instances/image_annotated
 ```
@@ -263,6 +264,14 @@ OpenVisionABU26/
 `/yolo/kfs_instances` is the KFS-level structured runtime output and uses the message type `abu_yolo_ros/msg/KfsInstanceArray`.
 
 The KFS instance publisher now evaluates team color at the instance level using the final KFS crop, with `refined_bbox` as the primary source and `expanded_bbox` as fallback when needed.
+
+Decision labels in the vision pipeline are legality-oriented, not immediate robot action commands:
+
+- `legal`: valid KFS target candidate
+- `illegal`: invalid or rule-forbidden KFS target candidate
+- `unknown`: insufficient evidence
+
+Downstream planning can later decide whether to collect, skip, or route around a localized legal KFS candidate.
 
 `/yolo/kfs_instances_localized` is the first OpenVision-v3 KFS 3D localization output and uses the message type `abu_yolo_ros/msg/LocalizedKfsInstanceArray`.
 
@@ -275,6 +284,10 @@ Current plane-height design:
 - `instance_hint` is intentionally postponed because visual color/type-based height inference may be unreliable.
 - `block_map` is the preferred future mode once a BlockLocalizer / board-map provider exists.
 - until that provider exists, `block_map` still falls back to fixed plane height.
+
+`/yolo/kfs_instances_stabilized` reuses the same `abu_yolo_ros/msg/LocalizedKfsInstanceArray` contract and adds lightweight perception-level temporal smoothing after 3D localization.
+
+The stabilizer uses a small constant-velocity Kalman filter with conservative gating. It smooths localized KFS positions for downstream consumers, but it is not strategic KFS tracking, not closest-KFS selection, and not collection-priority memory. Visual servoing is also future work and is not implemented here.
 
 `/yolo/kfs_instances/image_annotated` remains a debug-only visualization topic for final KFS instance aggregation boxes. It can also draw the aggregation ROI overlay, and that ROI should match the actual filtering region used by the runtime aggregator. It does not change the existing `/yolo/detections` or `/yolo/image_annotated` outputs.
 

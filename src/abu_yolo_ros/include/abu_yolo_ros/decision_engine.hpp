@@ -7,8 +7,8 @@
 namespace abu_yolo_ros {
 
 enum class KFSDecision {
-    COLLECT,
-    AVOID,
+    LEGAL,
+    ILLEGAL,
     UNKNOWN
 };
 

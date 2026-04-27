@@ -53,8 +53,8 @@ int main()
             &matching_color,
             config);
     ok &= expect(
-        r1_result.decision == KFSDecision::AVOID,
-        "class_name=R1 should always be AVOID");
+        r1_result.decision == KFSDecision::ILLEGAL,
+        "class_name=R1 should always be ILLEGAL");
     ok &= expect(
         r1_result.reason.find("R1 KFS detected") != std::string::npos,
         "R1 reason should mention R1 KFS");
@@ -67,8 +67,8 @@ int main()
             &matching_color,
             config);
     ok &= expect(
-        real3_result.decision == KFSDecision::COLLECT,
-        "REAL_3 with matching color and enough confidence should COLLECT");
+        real3_result.decision == KFSDecision::LEGAL,
+        "REAL_3 with matching color and enough confidence should be LEGAL");
     ok &= expect(
         real3_result.reason.find("REAL KFS with correct team color") != std::string::npos,
         "REAL_3 reason should mention correct team color");
@@ -81,8 +81,8 @@ int main()
             &matching_color,
             config);
     ok &= expect(
-        real5_result.decision == KFSDecision::COLLECT,
-        "REAL_5 with matching color and enough confidence should COLLECT");
+        real5_result.decision == KFSDecision::LEGAL,
+        "REAL_5 with matching color and enough confidence should be LEGAL");
 
     const DecisionResult fake_result =
         abu_yolo_ros::classifyKFS(
@@ -92,8 +92,8 @@ int main()
             &matching_color,
             config);
     ok &= expect(
-        fake_result.decision == KFSDecision::AVOID,
-        "FAKE_* should always be AVOID");
+        fake_result.decision == KFSDecision::ILLEGAL,
+        "FAKE_* should always be ILLEGAL");
     ok &= expect(
         fake_result.reason.find("FAKE KFS detected") != std::string::npos,
         "FAKE reason should mention FAKE KFS");
@@ -119,8 +119,8 @@ int main()
             &matching_color,
             avoid_low_conf_config);
     ok &= expect(
-        low_conf_avoid.decision == KFSDecision::AVOID,
-        "Low-confidence REAL should be AVOID when unknown_on_low_confidence=false");
+        low_conf_avoid.decision == KFSDecision::ILLEGAL,
+        "Low-confidence REAL should be ILLEGAL when unknown_on_low_confidence=false");
 
     const double expected_final_conf =
         config.yolo_confidence_weight * 0.92 +
@@ -143,8 +143,8 @@ int main()
             real_collect_input,
             config);
     ok &= expect(
-        real_collect_result.decision == KFSDecision::COLLECT,
-        "REAL instance with team match and high confidence should COLLECT");
+        real_collect_result.decision == KFSDecision::LEGAL,
+        "REAL instance with team match and high confidence should be LEGAL");
 
     const KFSInstanceDecisionInput real_no_match_input{
         "REAL",
@@ -185,8 +185,8 @@ int main()
             real_low_conf_input,
             avoid_low_conf_config);
     ok &= expect(
-        real_low_conf_avoid_result.decision == KFSDecision::AVOID,
-        "Low-confidence REAL instance should be AVOID when unknown_on_low_confidence=false");
+        real_low_conf_avoid_result.decision == KFSDecision::ILLEGAL,
+        "Low-confidence REAL instance should be ILLEGAL when unknown_on_low_confidence=false");
 
     const KFSInstanceDecisionInput fake_instance_input{
         "FAKE",
@@ -202,8 +202,8 @@ int main()
             fake_instance_input,
             config);
     ok &= expect(
-        fake_instance_result.decision == KFSDecision::AVOID,
-        "FAKE instance should always be AVOID");
+        fake_instance_result.decision == KFSDecision::ILLEGAL,
+        "FAKE instance should always be ILLEGAL");
 
     const KFSInstanceDecisionInput r1_instance_input{
         "R1",
@@ -219,8 +219,8 @@ int main()
             r1_instance_input,
             config);
     ok &= expect(
-        r1_instance_result.decision == KFSDecision::AVOID,
-        "R1 instance should always be AVOID");
+        r1_instance_result.decision == KFSDecision::ILLEGAL,
+        "R1 instance should always be ILLEGAL");
 
     const KFSInstanceDecisionInput ambiguous_instance_input{
         "AMBIGUOUS",

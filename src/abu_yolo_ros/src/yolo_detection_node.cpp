@@ -1020,8 +1020,8 @@ private:
     void maybeLogDecisionResults(
         const std::vector<abu_yolo_ros::DecisionResult>& decision_results)
     {
-        std::size_t collect_count = 0;
-        std::size_t avoid_count = 0;
+        std::size_t legal_count = 0;
+        std::size_t illegal_count = 0;
         std::size_t unknown_count = 0;
 
         std::ostringstream details;
@@ -1031,11 +1031,11 @@ private:
             const auto& result = decision_results[i];
 
             switch (result.decision) {
-            case abu_yolo_ros::KFSDecision::COLLECT:
-                ++collect_count;
+            case abu_yolo_ros::KFSDecision::LEGAL:
+                ++legal_count;
                 break;
-            case abu_yolo_ros::KFSDecision::AVOID:
-                ++avoid_count;
+            case abu_yolo_ros::KFSDecision::ILLEGAL:
+                ++illegal_count;
                 break;
             case abu_yolo_ros::KFSDecision::UNKNOWN:
             default:
@@ -1057,10 +1057,10 @@ private:
             this->get_logger(),
             *this->get_clock(),
             2000,
-            "DecisionEngine det=%zu collect=%zu avoid=%zu unknown=%zu %s",
+            "DecisionEngine det=%zu legal=%zu illegal=%zu unknown=%zu %s",
             decision_results.size(),
-            collect_count,
-            avoid_count,
+            legal_count,
+            illegal_count,
             unknown_count,
             has_details ? details.str().c_str() : "");
     }

@@ -46,21 +46,22 @@ yolo_detection_node:
     min_match_confidence: 0.30
 
     # DecisionEngine thresholds
-    # confidence threshold for recognizing R1 KFS, which R2 should avoid.
+    # confidence threshold for recognizing R1 KFS, which is an illegal target candidate.
     r1_conf_threshold: 0.55
-    # minimum YOLO confidence for REAL KFS to be considered for collection.
+    # minimum YOLO confidence for REAL KFS to be considered for legal classification.
     real_conf_threshold: 0.60
-    # lower threshold because detecting FAKE early is safety-critical; if suspected as FAKE, avoid it.
+    # lower threshold because FAKE should be marked illegal as early as possible.
     fake_conf_threshold: 0.45
     # final confidence threshold after combining YOLO confidence and color confidence.
+    # If exceeded for a valid REAL KFS, the output decision becomes legal.
     collect_min_confidence: 0.60
     # contribution of YOLO model confidence to final confidence.
     yolo_confidence_weight: 0.60
     # contribution of TeamColorFilter confidence to final confidence.
     color_confidence_weight: 0.40
-    # REAL KFS can only be collected if it matches the configured team color.
+    # REAL KFS can only be marked legal if it matches the configured team color.
     require_team_color_match: true
-    # low-confidence detections become UNKNOWN instead of AVOID.
+    # low-confidence detections become UNKNOWN instead of ILLEGAL.
     unknown_on_low_confidence: true
 
     # KFSInstanceAggregator
@@ -255,3 +256,37 @@ kfs_3d_localizer_node:
     kfs_3d_localizer.validation.max_distance_mm: 3000.0
     kfs_3d_localizer.validation.max_abs_y_mm: 2000.0
     kfs_3d_localizer.validation.reject_if_ray_parallel: true
+
+kfs_localization_stabilizer_node:
+
+  ros__parameters:
+
+    kfs_localization_stabilizer.enabled: true
+    kfs_localization_stabilizer.input_topic: "/yolo/kfs_instances_localized"
+    kfs_localization_stabilizer.output_topic: "/yolo/kfs_instances_stabilized"
+    kfs_localization_stabilizer.debug: true
+
+    # Lightweight perception-level temporal smoothing only.
+    # This is not strategic KFS tracking, closest-KFS selection, or collect-target memory.
+    kfs_localization_stabilizer.filter.model: "kalman_cv_2d"
+    kfs_localization_stabilizer.filter.process_noise_pos: 25.0
+    kfs_localization_stabilizer.filter.process_noise_vel: 100.0
+    kfs_localization_stabilizer.filter.measurement_noise_pos: 100.0
+    kfs_localization_stabilizer.filter.initial_position_variance: 400.0
+    kfs_localization_stabilizer.filter.initial_velocity_variance: 1000.0
+    kfs_localization_stabilizer.filter.max_dt_sec: 0.2
+    kfs_localization_stabilizer.filter.min_dt_sec: 0.001
+
+    kfs_localization_stabilizer.gating.max_association_distance_mm: 350.0
+    kfs_localization_stabilizer.gating.max_jump_distance_mm: 600.0
+    kfs_localization_stabilizer.gating.require_group_type_match: true
+    kfs_localization_stabilizer.gating.require_decision_compatibility: false
+    kfs_localization_stabilizer.gating.min_class_name_overlap: 0
+
+    kfs_localization_stabilizer.track_lifecycle.max_missed_frames: 10
+    kfs_localization_stabilizer.track_lifecycle.max_track_age_sec_without_update: 1.0
+    kfs_localization_stabilizer.track_lifecycle.min_hits_for_stable: 2
+
+    kfs_localization_stabilizer.output.publish_unlocalized_instances: true
+    kfs_localization_stabilizer.output.pass_through_failed_instances: true
+    kfs_localization_stabilizer.output.append_quality_suffix: true

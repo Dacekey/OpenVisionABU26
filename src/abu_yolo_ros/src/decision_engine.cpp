@@ -50,10 +50,10 @@ bool isR1GroupType(const std::string& group_type)
 std::string decisionToString(KFSDecision decision)
 {
     switch (decision) {
-    case KFSDecision::COLLECT:
-        return "collect";
-    case KFSDecision::AVOID:
-        return "avoid";
+    case KFSDecision::LEGAL:
+        return "legal";
+    case KFSDecision::ILLEGAL:
+        return "illegal";
     case KFSDecision::UNKNOWN:
     default:
         return "unknown";
@@ -108,7 +108,7 @@ DecisionResult classifyKFS(
         reason << "Invalid class_name '" << class_name
                << "' for class_id " << class_id;
         return {
-            KFSDecision::AVOID,
+            KFSDecision::ILLEGAL,
             reason.str(),
             0.0};
     }
@@ -125,37 +125,37 @@ DecisionResult classifyKFS(
         return {
             config.unknown_on_low_confidence ?
                 KFSDecision::UNKNOWN :
-                KFSDecision::AVOID,
+                KFSDecision::ILLEGAL,
             reason.str(),
             yolo_confidence};
     }
 
     if (isR1ClassName(class_name)) {
         return {
-            KFSDecision::AVOID,
-            "R1 KFS detected - AVOID",
+            KFSDecision::ILLEGAL,
+            "R1 KFS detected - ILLEGAL",
             yolo_confidence};
     }
 
     if (isFakeClassName(class_name)) {
         return {
-            KFSDecision::AVOID,
-            "FAKE KFS detected - AVOID",
+            KFSDecision::ILLEGAL,
+            "FAKE KFS detected - ILLEGAL",
             yolo_confidence};
     }
 
     if (color_result == nullptr) {
         return {
-            KFSDecision::AVOID,
-            "REAL KFS but no team color result - AVOID",
+            KFSDecision::ILLEGAL,
+            "REAL KFS but no team color result - ILLEGAL",
             yolo_confidence * 0.5};
     }
 
     if (config.require_team_color_match &&
         !color_result->matches_team) {
         return {
-            KFSDecision::AVOID,
-            "REAL KFS but team color mismatch or unknown - AVOID",
+            KFSDecision::ILLEGAL,
+            "REAL KFS but team color mismatch or unknown - ILLEGAL",
             yolo_confidence};
     }
 
@@ -171,8 +171,8 @@ DecisionResult classifyKFS(
     }
 
     return {
-        KFSDecision::COLLECT,
-        "REAL KFS with correct team color - COLLECT",
+        KFSDecision::LEGAL,
+        "REAL KFS with correct team color - LEGAL",
         final_confidence};
 }
 
@@ -189,15 +189,15 @@ DecisionResult classifyKFSInstance(
 
     if (isFakeGroupType(input.group_type)) {
         return {
-            KFSDecision::AVOID,
-            "FAKE KFS instance - AVOID",
+            KFSDecision::ILLEGAL,
+            "FAKE KFS instance - ILLEGAL",
             input.symbol_confidence};
     }
 
     if (isR1GroupType(input.group_type)) {
         return {
-            KFSDecision::AVOID,
-            "R1 KFS instance - AVOID",
+            KFSDecision::ILLEGAL,
+            "R1 KFS instance - ILLEGAL",
             input.symbol_confidence};
     }
 
@@ -212,7 +212,7 @@ DecisionResult classifyKFSInstance(
         return {
             config.unknown_on_low_confidence ?
                 KFSDecision::UNKNOWN :
-                KFSDecision::AVOID,
+                KFSDecision::ILLEGAL,
             "Low REAL instance confidence",
             input.symbol_confidence};
     }
@@ -237,8 +237,8 @@ DecisionResult classifyKFSInstance(
     }
 
     return {
-        KFSDecision::COLLECT,
-        "REAL KFS instance with correct team color - COLLECT",
+        KFSDecision::LEGAL,
+        "REAL KFS instance with correct team color - LEGAL",
         final_confidence};
 }
 
