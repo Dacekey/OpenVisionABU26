@@ -1,4 +1,4 @@
-# KFS Instance Prototype – Offline Clustering, Symbol Aggregation, and Debug Diagnostics
+# OpenVision-v3 – KFS Instance Prototype and Aggregation Design
 
 **Date:** 2026-04-25
 **Status:** Prototype Stable (12/13 Test Cases)
@@ -10,11 +10,23 @@
 ## 1. Overview
 The `kfs_instance_prototype` was created to bridge the gap between low-level object detection and high-level robot decision making. While YOLO is excellent at identifying individual symbols, the robot requires a holistic understanding of "KFS instances" (the physical boxes containing these symbols). This offline prototype serves as a sandbox to validate complex grouping and classification logic before it is ported into the production C++/ROS 2 environment.
 
+## Version Context
+
+This log belongs to the OpenVision-v3 development sequence. It builds on the earlier V2 refactor, TeamColorFilter, and DecisionEngine groundwork, and moves the project toward a KFS-level perception runtime for ABU Robocon 2026.
+
+This prototype is the bridge between earlier symbol-level logic and the later OpenVision-v3 KFS runtime.
+
+## Terminology Update
+
+Current OpenVision-v3 treats `legal / illegal / unknown` as the vision-level interpretation labels.
+
+Any action-oriented wording from earlier development should be read as historical discussion, not as the current runtime contract.
+
 ## 2. Problem Statement
 - **Granularity Mismatch:** YOLO detects individual symbols, but decisions must be made at the KFS box level.
 - **Observation Variability:** A single KFS may show multiple symbols or only one, depending on distance, perspective, and lighting.
 - **Environmental Noise:** Dark images, motion blur, and partial occlusions make simple geometric grouping unreliable.
-- **Risk of Over-Merging:** Incorrectly merging two nearby KFS boxes can lead to dangerous robot maneuvers (e.g., trying to collect a Fake KFS incorrectly identified as a Real one).
+- **Risk of Over-Merging:** Incorrectly merging two nearby KFS boxes can lead to unsafe legality interpretation and unstable downstream planning input.
 
 ## 3. Input and Output
 ### Inputs
@@ -93,3 +105,18 @@ Tested against **13 representative images**.
 
 ## 10. Final Status
 The offline KFS instance prototype is now fully usable for analyzing competition-style images. With a 12/13 pass rate, the current logic is considered a high-quality baseline. Future work will involve evaluating more datasets before initiating the port to the ROS 2 C++ runtime.
+
+## Current OpenVision-v3 Status
+
+This prototype is no longer the active runtime path, but it remains the design checkpoint that validated:
+
+- ROI and range filtering
+- square-normalized symbol geometry
+- HSV body mask and contour support
+- conservative KFS clustering and merging
+- ambiguous cluster dropping
+
+## Relationship to Later Milestones
+
+- The stable logic from this prototype was ported into `2026-04-26_05_OpenVisionV3_KFSInstanceRuntime.md`
+- later milestones then extended the runtime with localization, stabilization, runtime safety, benchmarking, and backend architecture work

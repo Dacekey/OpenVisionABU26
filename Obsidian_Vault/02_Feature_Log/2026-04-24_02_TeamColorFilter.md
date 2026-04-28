@@ -1,65 +1,155 @@
-# Feature Log: TeamColorFilter Implementation & Calibration
+# OpenVision – TeamColorFilter Groundwork
 
-**Date:** 2026-04-24
-**Status:** Stable / Calibration Complete
-**Workspace:** ~/openvision_ros2_ws_v2
-**Package:** abu_yolo_ros
+**Date:** 2026-04-24  
+**Status:** Stable groundwork later extended into OpenVision-v3  
+**Workspace:** `~/openvision_ros2_ws_v2`  
+**Package:** `abu_yolo_ros`
 
----
+## 1. Historical Objective
 
-## 1. Objective
-- Add a real TeamColorFilter module to OpenVisionABU26 v2.
-- Detect whether each YOLO bbox belongs to red team, blue team, or unknown using HSV color filtering.
-- Keep ROS output contracts unchanged for now (no message type or topic modifications).
+This milestone originally introduced a real `TeamColorFilter` module during the v2 phase.
 
-## 2. Implemented Changes
-- **Module Implementation:**
-  - `include/abu_yolo_ros/team_color_filter.hpp`
-  - `src/team_color_filter.cpp`
-- **Data Structures:**
-  - Added `TeamColor` enum: `RED`, `BLUE`, `UNKNOWN`.
-  - Added `TeamColorResult` fields for coverage, mean HSV, confidence, and dominant color analysis.
-  - Added `TeamColorFilterConfig` to move HSV thresholds from hard-coded constants to ROS parameters.
-- **Node Integration:**
-  - Wired `TeamColorFilter` into `yolo_detection_node.cpp`.
-  - Added and handled parameters: `enable_team_color_filter`, `team_color`, `debug_detections`, and specific HSV range/tuning values.
-- **Configuration:**
-  - Added default tuning values to `config/yolo_detection.yaml`.
-- **Diagnostics & Tooling:**
-  - Added controlled detection debug logging and HSV diagnostics for calibration.
-  - Added standalone HSV calibration tool: `tools/hsv_calibration_viewer.py` and `tools/README.md`.
+Initial goals at that time:
 
-## 3. Runtime Behavior
-- TeamColorFilter runs internally immediately after YOLO inference.
-- **Isolation:** It does not modify `Detection2DArray` output or draw on the annotated image yet.
-- **Decoupling:** It does not implement `DecisionEngine` yet; it serves as a pure classification and diagnostic provider.
+- classify detections as red, blue, or unknown using HSV filtering
+- make thresholds configurable in YAML
+- support runtime debugging and calibration
+- avoid changing existing ROS outputs while the logic was still being validated
 
-## 4. Current HSV Tuning Result
-- **Red:** Initial thresholds worked well immediately.
-- **Blue:** Initially detected as `UNKNOWN` due to overly strict saturation (`s_low`) thresholds.
-- **Relaxation:** Diagnostics showed blue samples had lower saturation than anticipated in the environment.
-- **Result:** Relaxed Blue YAML thresholds (`H: 90–140`, `S >= 40`, `V >= 80`) successfully resolved the detection issue.
+## 2. What Was Implemented Initially
 
-## 5. Calibration Tool
-- Added `hsv_calibration_viewer.py` as a standalone Python/OpenCV tool.
-- **Features:** Supports `--camera`, `--color`, `--width/height`, and `--yaml` inputs.
-- **Feedback:** Displays original image, mask, and overlay with real-time coverage stats.
-- **Workflow:** Pressing "s" prints a YAML snippet to the terminal for manual update to `yolo_detection.yaml` (no auto-saving for safety).
+Initial module and tooling work:
 
-## 6. Validation
-- `colcon build --packages-select abu_yolo_ros` passed.
-- **Live Testing:** Confirmed Red and Blue detections are accurate with new thresholds.
-- **Integrity:** Existing ROS outputs and annotated images remain unchanged.
+- `include/abu_yolo_ros/team_color_filter.hpp`
+- `src/team_color_filter.cpp`
+- YAML-configurable HSV thresholds in `config/yolo_detection.yaml`
+- calibration helper tooling in `tools/hsv_calibration_viewer.py`
+- debug-oriented diagnostics for coverage and color confidence
 
-## 7. Safety / Design Notes
-- Thresholds are now YAML-configurable to avoid recompiling C++ code for different lighting environments.
-- **Operating Modes:** Use `debug_detections` for tuning; disable in competition mode to minimize overhead.
-- **Manual Gate:** The calibration tool intentionally does not auto-save to prevent accidental corruption of known-good configurations.
+The original v2 implementation operated primarily on symbol-level YOLO crops.
 
-## 8. Future Option: Threshold Validation Runner
-- **Purpose:** An optional tool to verify tuned thresholds against a dataset of sample images (`red/`, `blue/`, `background/`).
-- **Function:** Provides confidence checking (e.g., "Red samples detected as RED: 48/50") before deployment.
-- **Timeline:** To be built after `DecisionEngine` or before final competition deployment.
+## 3. How TeamColorFilter Evolved in OpenVision-v3
 
-## 9. Next Step
-- Proceed to `DecisionEngine` implementation to consume `TeamColorResult` and produce game-state actions (`COLLECT`, `AVOID`, `UNKNOWN`).
+In OpenVision-v3, TeamColorFilter is no longer only a symbol-level helper.
+
+It now participates in two distinct roles:
+
+- **symbol-level evaluation**
+  used for compatibility, debugging, and low-level diagnostics around raw YOLO symbol detections
+- **instance-level evaluation**
+  used after `KFSInstanceAggregator` groups symbols into physical KFS candidates
+
+The current OpenVision-v3 runtime relies more heavily on instance-level color evaluation because KFS body color is more reliable than tiny symbol crops.
+
+## 4. Current OpenVision-v3 TeamColorFilter Role
+
+Current TeamColorFilter usage in the runtime:
+
+- YOLO symbol detections are first interpreted at symbol level
+- `KFSInstanceAggregator` groups symbol detections into KFS instances
+- TeamColorFilter then evaluates the KFS instance crop
+- the result feeds instance-level legality evaluation
+
+Current instance-level crop strategy:
+
+- **primary crop:** `refined_bbox`
+- **fallback crop:** `expanded_bbox` if the refined crop is invalid, too small, or unreliable
+
+This makes TeamColorFilter a key part of the current legal / illegal / unknown decision flow, but it is still not the final strategy layer.
+
+## 5. Terminology Update
+
+Older v2 development often described the next step as producing:
+
+- `collect`
+- `avoid`
+- `unknown`
+
+Current OpenVision-v3 terminology is:
+
+- `legal`
+- `illegal`
+- `unknown`
+
+Important clarification:
+
+- TeamColorFilter helps estimate whether a detected KFS matches the robot team color
+- it supports legality interpretation
+- it does **not** decide final robot action such as collection, path choice, or arm behavior
+
+Those action decisions are deferred to downstream planning and control.
+
+## 6. Current Technical Behavior
+
+Current TeamColorFilter design characteristics:
+
+- HSV thresholds remain YAML-configurable
+- symbol-level and instance-level crops are both supported
+- color confidence and mask coverage remain useful diagnostics
+- instance-level color evaluation is designed to support KFS legality interpretation
+
+Known runtime usage patterns:
+
+- symbol-level color is still useful for debug visibility and compatibility
+- instance-level color is preferred for final KFS interpretation
+- color matching is combined with semantic KFS type and confidence thresholds in the DecisionEngine
+
+## 7. HSV Profiles and Calibration Notes
+
+Current OpenVision-v3 documentation and config convention include HSV profiles such as:
+
+- `competition_blue`
+- debug-only variants such as `dark_blue`
+
+These profiles are tuning aids, not separate perception algorithms.
+
+Calibration principles that still remain valid:
+
+- keep thresholds configurable in YAML
+- use debug tools for tuning
+- avoid auto-overwriting known-good config during field iteration
+
+## 8. Current OpenVision-v3 Status
+
+TeamColorFilter is now part of a larger KFS-level runtime rather than a standalone symbol-only feature.
+
+Its place in the current pipeline:
+
+Camera/Image  
+-> YOLO symbol detection  
+-> KFSInstanceAggregator  
+-> instance-level TeamColorFilter  
+-> instance-level DecisionEngine  
+-> `/yolo/kfs_instances`
+
+This means the feature should now be understood as groundwork that later matured into KFS-level color evaluation.
+
+## 9. Relationship to Later Milestones
+
+This groundwork later evolved into:
+
+- `2026-04-24_03_DecisionEngine.md`
+- `2026-04-25_04_KFSInstancePrototype.md`
+- `2026-04-26_05_OpenVisionV3_KFSInstanceRuntime.md`
+
+The later OpenVision-v3 runtime milestone is where TeamColorFilter became part of:
+
+- instance-level KFS interpretation
+- `refined_bbox` and `expanded_bbox` crop selection
+- legal / illegal / unknown runtime output semantics
+
+## 10. Validation History
+
+Validation from the original phase still remains relevant:
+
+- `colcon build --packages-select abu_yolo_ros` passed
+- red and blue threshold tuning was validated in the development environment
+- diagnostics and calibration tooling improved repeatability
+
+## 11. Final Interpretation
+
+This log preserves the v2-origin history of TeamColorFilter, but its current meaning inside OpenVision-v3 is broader:
+
+- not just symbol-level color classification
+- not direct collection strategy
+- now a supporting feature for instance-level KFS legality interpretation

@@ -1,138 +1,170 @@
-# Feature Log: DecisionEngine Implementation
+# OpenVision – DecisionEngine Groundwork
 
-**Date:** 2026-04-24
-**Status:** Stable / Logic Verified
-**Workspace:** ~/openvision_ros2_ws_v2
-**Package:** abu_yolo_ros
+**Date:** 2026-04-24  
+**Status:** Stable groundwork later evolved into OpenVision-v3 legality interpretation  
+**Workspace:** `~/openvision_ros2_ws_v2`  
+**Package:** `abu_yolo_ros`
 
----
+## 1. Historical Objective
 
-## 1. Objective
-- Add a DecisionEngine module to OpenVisionABU26 v2.
-- Convert YOLO detections and TeamColorFilter results into internal decisions: `COLLECT`, `AVOID`, or `UNKNOWN`.
-- Maintain existing ROS output message contracts (Detection2DArray) for stability.
-- Utilize YAML-configurable thresholds for risk-based tuning without recompilation.
+This milestone originally introduced the DecisionEngine module during the older v2 phase.
 
-## 2. Implemented Changes
-- **Module Implementation:**
-  - `include/abu_yolo_ros/decision_engine.hpp`
-  - `src/decision_engine.cpp`
-- **Data Structures:**
-  - Added `KFSDecision` enum: `COLLECT`, `AVOID`, `UNKNOWN`.
-  - Added `DecisionEngineConfig` for per-class thresholds and confidence weighting.
-  - Added `DecisionResult` fields: `decision`, `reason`, `final_confidence`.
-- **Node Integration:**
-  - Wired into `yolo_detection_node.cpp` following `TeamColorFilter` execution.
-  - Implemented rich debug logging: `class_id`, `class_name`, color result, decision, and reason.
-- **Configuration & Tests:**
-  - Added parameters and explanatory comments to `config/yolo_detection.yaml`.
-  - Added unit tests for key logic cases in `test/decision_engine_test.cpp`.
+At that time, the goal was to:
 
-## 3. Important Bug Found and Fixed
-- **The Issue:** Initial implementation used hard-coded `class_id` ranges (e.g., 0=R1, 1-15=REAL) for classification.
-- **The Risk:** Actual model label indices did not match these assumptions (e.g., `REAL_3` was mapped to 24, incorrectly falling into the `FAKE` range).
-- **The Fix:** Refactored `DecisionEngine` to use resolved semantic `class_name` as the source of truth for all logic. `class_id` is now preserved strictly for technical traceability.
+- combine YOLO semantic class information with TeamColorFilter output
+- classify detections into a higher-level interpretation layer
+- keep message contracts stable while the logic was still being tuned
 
-## 4. Current Decision Logic
-- **R1:** Always `AVOID` (Not the target for R2).
-- **FAKE_***: Always `AVOID`.
-- **REAL_***:
-  - `COLLECT` if team color matches AND `final_confidence` >= `collect_min_confidence`.
-  - `AVOID` if team color is wrong/unknown.
-- **Confidence Handling:** `UNKNOWN` if `unknown_on_low_confidence` is enabled and thresholds aren't met.
-- **Safety Default:** Invalid or unknown `class_name` defaults to `AVOID`.
-- **Confidence Calculation:** 
-  `final_confidence = (yolo_weight * yolo_conf) + (color_weight * color_conf)`
+## 2. Important Historical Implementation Work
 
-## 5. Current Risk-Based Default Config
-- `r1_conf_threshold`: 0.55
-- `real_conf_threshold`: 0.60 (Higher required for collection)
-- `fake_conf_threshold`: 0.45 (Lower to trigger `AVOID` early for safety)
-- `collect_min_confidence`: 0.60
-- `yolo_confidence_weight`: 0.60
-- `color_confidence_weight`: 0.40
-- `require_team_color_match`: true
-- `unknown_on_low_confidence`: true
+Initial DecisionEngine work included:
 
-## 6. Runtime Behavior
-- Runs internally after inference and color filtering.
-- **Encapsulation:** No changes to ROS topic names, message types, or annotated image output.
-- **Validation Tool:** Currently serves as a high-signal logic validator through terminal logs before being exposed to custom messages.
+- `include/abu_yolo_ros/decision_engine.hpp`
+- `src/decision_engine.cpp`
+- YAML-configurable thresholds and confidence weighting
+- debug logging for semantic class, color result, confidence, and reasoning
+- unit tests for important rule paths
 
-## 7. Rulebook / Phase Scope
-- **Current Scope:** Meihua Forest KFS collection phase (R1/R2 retrieval vs. Fakes).
-- **Future Scope:** Arena Tic-Tac-Toe strategy (slot selection, board state) to be handled by separate modules (`ArenaDecisionEngine`, `TicTacToePlanner`, etc.).
+An important bug was also corrected early:
 
-## 8. Offline Threshold Tuning Tool
-- **Tool:** `tools/tune_decision_thresholds.py`
-- **Purpose:** Automate the calculation of optimal `r1/real/fake` thresholds from validation datasets.
-- **Status:** Skeleton implemented; uses IoU matching and precision/recall sweeping to provide YAML recommendations. Requires full live-testing with a complete dataset.
+- the logic was moved away from hard-coded `class_id` assumptions
+- semantic `class_name` or family became the real source of truth
 
-## 9. Validation
-- `colcon build` successful.
-- Verified that `class_name` semantics correctly drive decisions even when `class_id` ordering is non-linear.
-- **Example:** `REAL_3` now correctly triggers `COLLECT` (if team matches) instead of `AVOID`.
+That design choice still matters in OpenVision-v3.
 
-## 10. Safety / Design Notes
-- Design prioritizes semantic labels (`class_name`) over model-specific indices (`class_id`).
-- Decision results remain internal to the node to prevent breaking downstream consumers during the development/tuning phase.
+## 3. Terminology Update
 
-## 12. KFS Instance Aggregation & Decision Tree (Offline Prototype)
+The terminology has evolved since the original v2 wording.
 
-### A. Purpose
-The Decision Tree module is utilized post-YOLO detection to group disparate symbol observations into high-level KFS-level instances. The goal is to aggregate evidence to determine if a physical object is `REAL`, `FAKE`, `R1`, or `AMBIGUOUS`.
+Older action-oriented labels:
 
-### B. High-Level Pipeline
-1. **Symbol Detection:** YOLO identifies individual symbols (observations).
-2. **Preprocessing:** Symbols are filtered by ROI and normalized (square-normalized expansion) to stabilize geometry.
-3. **Region Generation:** Candidate KFS footprints are generated using geometry and expanded bounding boxes, supported by color-contour analysis.
-4. **Clustering/Merging:** Nearby and compatible symbols are merged based on spatial and semantic rules.
-5. **Aggregation:** Final clusters are evaluated and converted into `final_instances`.
-6. **Safety Filter:** Uncertain or conflicting clusters are classified as `AMBIGUOUS` and dropped from the actionable output if configured.
+- `collect`
+- `avoid`
+- `unknown`
 
-### C. Decision Tree Logic
-The following logic is applied to every candidate cluster (containing one or more symbols):
+Current OpenVision-v3 vision-level labels:
 
-#### Step 1 — Validate Candidate Symbols
-- Map `class_id` to semantic `class_family` (REAL, FAKE, R1).
-- Preserve all metadata (confidence, source geometry, color diagnostics) for evidence weighting.
+- `legal`
+- `illegal`
+- `unknown`
 
-#### Step 2 — Merge Decision (Compatibility Check)
-- **Spatial:** Check overlap, proximity, and gaps.
-- **Geometric:** Verify scale compatibility and face alignment.
-- **Hard Safety Gates:** Apply strict exclusion rules (e.g., maximum distance, incompatible scale).
-- **Ranking:** Use a scoring layer to select the best match among candidates that pass all hard gates.
+Important clarification:
 
-#### Step 3 — Cluster Classification
-- **IF** cluster only contains REAL symbols → **REAL**
-- **IF** cluster only contains FAKE symbols → **FAKE**
-- **IF** cluster contains R1 symbols → **R1**
-- **IF** cluster contains a mix of REAL and FAKE evidence → **AMBIGUOUS**
+- the DecisionEngine now determines KFS legality interpretation
+- it does **not** directly command robot action
+- collection, skipping, route choice, target persistence, and servoing are downstream strategy or control decisions
 
-#### Step 4 — Safety Handling
-- **IF** `drop_ambiguous_clusters` is enabled:
-  - Remove `AMBIGUOUS` clusters from `final_instances`.
-  - Log to `dropped_clusters` with reason `ambiguous_cluster`.
-- **Note:** This "Safety-First" approach prevents the robot from acting on uncertain data, prioritizing a better future viewpoint over a current high-risk decision.
+## 4. How the DecisionEngine Evolved in OpenVision-v3
 
-### D. Key Technical Improvements
-- **Semantic Classification:** Moved away from rigid `class_id` ranges to robust class-family rules.
-- **Geometry Stabilization:** Implemented square-normalized symbol bboxes before expansion to mitigate "bad expansion" from tall/thin detection boxes.
-- **Conflict Avoidance:** Added neighbor-clamped expansion to prevent expanded search areas from "swallowing" independent nearby KFS.
-- **Edge Case Robustness:** Added partial-visibility handling for frame borders and same-label neighbor merge support.
-- **Rich Diagnostics:** Separated output into `clusters`, `final_instances`, and `dropped_clusters` with detailed ranking score components.
+The original v2 DecisionEngine was symbol-level.
 
-### E. Prototype vs. Runtime Status
-- **Validation Path:** This logic is currently implemented and validated within the offline prototype:
-  - `src/abu_yolo_ros/tools/kfs_instance_prototype.py`
-  - `src/abu_yolo_ros/tools/config/kfs_instance_prototype.yaml`
-- **Current State:** ROS runtime remains decoupled and unchanged for stability.
-- **Porting Plan:** The logic is considered mature (12/13 test cases passed) and is ready for C++ porting into the primary ROS node.
+OpenVision-v3 now uses DecisionEngine logic in two contexts:
 
-### F. Validation Summary
-- **Dataset:** 13 representative competition-like images.
-- **Performance:** 12/13 cases successfully merged and classified.
-- **Edge Case:** Case 6 remains unmerged due to extreme depth/perspective ambiguity; dropping it is preferred over forcing a potentially incorrect merge.
-- **Commands:**
-  - `python3 -m py_compile src/abu_yolo_ros/tools/kfs_instance_prototype.py`
-  - `colcon build --packages-select abu_yolo_ros`
+- **symbol-level DecisionEngine**
+  retained mainly for compatibility, logging, and low-level debug interpretation
+- **instance-level DecisionEngine**
+  applied after `KFSInstanceAggregator` groups symbol detections into physical KFS candidates
+
+The instance-level stage is now the more important runtime interpretation layer.
+
+## 5. Current OpenVision-v3 Decision Logic
+
+Current vision-level interpretation rules are centered on legality, not direct action.
+
+High-level current rules:
+
+- `FAKE` -> `illegal`
+- `R1` -> `illegal`
+- `REAL` with strong team-color match -> `legal`
+- `REAL` without strong team-color match -> `unknown`
+- ambiguous or unsupported evidence -> `unknown` or dropped depending on aggregation stage
+
+Additional clarification:
+
+- ambiguous mixed clusters may be dropped before final publication if the aggregation stage marks them unsafe
+- low-confidence or weak-color cases should prefer `unknown` rather than an unsafe forced decision
+
+## 6. Relationship Between Aggregation and Decision
+
+In current OpenVision-v3, legality interpretation happens after KFS aggregation becomes available.
+
+Current conceptual flow:
+
+Camera/Image  
+-> YOLO symbol detection  
+-> symbol filtering  
+-> KFSInstanceAggregator  
+-> instance-level TeamColorFilter  
+-> instance-level DecisionEngine  
+-> `/yolo/kfs_instances`
+
+This is a major architectural change from the older v2 symbol-only logic.
+
+## 7. Current OpenVision-v3 Status
+
+The DecisionEngine should now be understood as a legality classifier inside the KFS-level runtime.
+
+Current role:
+
+- interpret semantic KFS type
+- combine that interpretation with team-color evidence
+- produce `legal / illegal / unknown`
+- remain separate from downstream strategy modules
+
+The runtime no longer treats `collect / avoid` as the primary vision-level contract.
+
+## 8. Relationship to Message Contracts
+
+The modern runtime publishes structured KFS outputs through:
+
+- `KfsInstance.msg`
+- `KfsInstanceArray.msg`
+
+Later milestones also added:
+
+- `LocalizedKfsInstance.msg`
+- `LocalizedKfsInstanceArray.msg`
+
+This means the DecisionEngine is now part of a larger interpreted perception contract rather than a standalone debug-only classifier.
+
+## 9. Relationship to Later Milestones
+
+This groundwork later evolved into:
+
+- `2026-04-25_04_KFSInstancePrototype.md`
+- `2026-04-26_05_OpenVisionV3_KFSInstanceRuntime.md`
+- `2026-04-27_06_OpenVisionV3_KFS3DLocalizer.md`
+- `2026-04-27_07_OpenVisionV3_KFSLocalizationStabilizer.md`
+
+Those later milestones moved the project from symbol-level interpretation toward:
+
+- KFS-level instance reasoning
+- legality-focused outputs
+- localized and stabilized downstream contracts
+
+## 10. Historical Notes Preserved
+
+The following historical ideas from the v2 phase still remain valid:
+
+- semantic labels are safer than relying on model index ordering
+- thresholds should remain YAML-configurable
+- debug logs are useful while tuning interpretation behavior
+- low-confidence cases should default to conservative handling
+
+What changed is not the need for a DecisionEngine, but the scope and terminology of what it now decides.
+
+## 11. Validation History
+
+Original validation from the groundwork phase remains relevant:
+
+- `colcon build` passed
+- semantic label handling was verified against non-linear `class_id` ordering
+- threshold tuning and logic tests improved confidence before larger runtime integration
+
+## 12. Final Interpretation
+
+This file records the historical origin of the DecisionEngine, but the current OpenVision-v3 interpretation is:
+
+- legality classification, not direct robot action
+- symbol-level groundwork extended into instance-level KFS reasoning
+- a supporting part of the larger KFS runtime pipeline rather than a standalone final decision layer

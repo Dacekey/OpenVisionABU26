@@ -1,6 +1,4 @@
-# 2026-04-29_08_OpenVisionV3_RuntimeSafetyHardening
-
-# OpenVision-v3 – Runtime Safety Hardening: BEST_EFFORT QoS, Inference Mutex, Frame Drop, and Circuit Breaker
+# OpenVision-v3 – Runtime Safety Hardening
 
 ## 1. Overview
 
@@ -260,6 +258,11 @@ ros2 topic hz /yolo/kfs_instances_stabilized
 - No `FPTU_ABU_R2` modification was made.
 
 This milestone improves runtime robustness without changing the higher-level OpenVision-v3 perception contract.
+
+## Relationship to Later Milestones
+
+- This hardening work is the runtime foundation for the ONNX baseline benchmark milestone
+- it also protects the later configurable backend architecture by defining failure and timeout behavior around inference execution
 
 ## 11. Future Work
 

@@ -1,6 +1,4 @@
-# 2026-04-27_07_OpenVisionV3_KFSLocalizationStabilizer
-
-# OpenVision-v3 – KFS Localization Stabilizer, Lightweight Kalman Filtering, and Realtime Output Validation
+# OpenVision-v3 – KFS Localization Stabilizer
 
 ## 1. Overview
 
@@ -28,7 +26,7 @@ Monocular 3D localization from a single camera projection is inherently sensitiv
 
 **Clarification on Scope:**
 - **Perception-Level Smoothing**: This is strictly a temporal filter for perception data.
-- **No Strategy**: It does *not* decide which KFS to collect or perform closest-KFS selection.
+- **No Strategy**: It does *not* decide which KFS should become the selected target or perform closest-KFS selection.
 - **No Long-Term Memory**: It does *not* remember a strategic target across long periods if it leaves the FOV.
 - **Strategic Tracking**: High-level target persistence and collection priority logic are reserved for future work.
 
@@ -167,6 +165,11 @@ ros2 run abu_yolo_ros kfs_localization_stabilizer_node --ros-args \
 - **Integration**: Connect `/yolo/kfs_instances_stabilized` to the `BlockLocalizer` and board map.
 - **Strategy**: Implement high-level collection priority logic.
 - **Alignment**: Consider visual servoing for precise close-range collection.
+
+## Relationship to Later Milestones
+
+- This node prepares stabilized robot-frame output for future block-map and planning integration
+- strategic target priority tracking, closest-KFS selection, and visual servoing remain future work outside the perception stabilizer
 
 ## 14. Suggested Commit Message
 

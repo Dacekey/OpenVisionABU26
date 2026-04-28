@@ -1,6 +1,4 @@
-# 2026-04-27_06_OpenVisionV3_KFS3DLocalizer
-
-# OpenVision-v3 – KFS 3D Localizer Runtime Node, Ray Projection, and Plane Height Strategy
+# OpenVision-v3 – KFS 3D Localizer Runtime Node
 
 ## 1. Overview
 
@@ -33,6 +31,15 @@ A new standalone node has been implemented to handle geometric transformations a
 - **Output:** `/yolo/kfs_instances_localized` (`abu_yolo_ros/msg/LocalizedKfsInstanceArray`)
 
 The node is integrated into `yolo.launch.py` to ensure it starts automatically with the vision stack. This modular approach allows for easier debugging and independent calibration of the 3D projection logic without impacting the core detector.
+
+## Current OpenVision-v3 Status
+
+This node currently provides the raw 3D localization stage in the runtime:
+
+- input: `/yolo/kfs_instances`
+- output: `/yolo/kfs_instances_localized`
+
+It is integrated and publishing, but accurate metric behavior still depends on real camera calibration and reliable extrinsics.
 
 ## 3. New Custom Messages
 
@@ -172,6 +179,11 @@ ros2 topic echo /yolo/kfs_instances_localized --once
 - Debug `intersection_behind_camera` by aligning camera/robot frame conventions.
 - Implement `block_map` logic once the board map module is ready.
 - Connect localized output to tracking and planning modules.
+
+## Relationship to Later Milestones
+
+- This localized output is stabilized in `2026-04-27_07_OpenVisionV3_KFSLocalizationStabilizer.md`
+- future block-map integration depends on camera calibration and board-map work that is not complete yet
 
 ## 14. Suggested Commit Message
 

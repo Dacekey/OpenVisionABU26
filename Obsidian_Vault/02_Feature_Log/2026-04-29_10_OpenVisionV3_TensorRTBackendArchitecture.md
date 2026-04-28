@@ -1,4 +1,4 @@
-# OpenVision-v3 – Configurable TensorRT Backend Architecture and ONNX Runtime Fallback
+# OpenVision-v3 – TensorRT Backend Architecture and ONNX Fallback
 
 ## 1. Overview
 
@@ -142,6 +142,15 @@ Meaning of those checks:
 - therefore, TensorRT backend cannot run live on this machine yet
 
 This milestone implemented the architecture and fallback path, not live TensorRT execution verification.
+
+## Current OpenVision-v3 Status
+
+Current backend status:
+
+- ONNX Runtime remains the default active backend
+- TensorRT backend exists as an optional architecture path
+- fallback to ONNX Runtime is part of the design
+- live TensorRT runtime and benchmark remain future work
 
 ## 7. Config Changes
 
@@ -390,3 +399,8 @@ git commit -m "Add configurable TensorRT inference backend"
 ```
 
 This commit message matches the scope of the milestone: the configurable TensorRT backend architecture and fallback path were added, but live TensorRT runtime validation and performance verification remain future work.
+
+## Relationship to Later Milestones
+
+- This architecture milestone depends on the ONNX baseline benchmark as its comparison reference
+- live TensorRT validation, engine build, and benchmark work are postponed to Jetson Nano future-work milestones

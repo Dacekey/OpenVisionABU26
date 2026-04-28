@@ -1,6 +1,4 @@
-# 2026-04-26_05_OpenVisionV3_KFSInstanceRuntime
-
-# OpenVision-v3 – KFS Instance Runtime Pipeline, Custom Message Output, and Instance-Level Decisions
+# OpenVision-v3 – KFS Instance Runtime Integration
 
 ## 1. Overview
 
@@ -16,7 +14,7 @@ OpenVision-v3 represents a fundamental shift in the perception stack, moving fro
 - YOLO continues to detect individual symbols as raw input.
 - **KFSInstanceAggregator** groups these symbols into KFS-level instances in real-time.
 - **Instance-level TeamColorFilter** evaluates the larger KFS body crop for more reliable color matching.
-- **Instance-level DecisionEngine** issues final `collect` / `avoid` / `unknown` decisions for the entire KFS object.
+- **Instance-level DecisionEngine** issues final `legal` / `illegal` / `unknown` decisions for the entire KFS object.
 - Runtime publishes structured KFS instances on `/yolo/kfs_instances`.
 - Specialized debug visualization is available on `/yolo/kfs_instances/image_annotated`.
 
@@ -40,6 +38,22 @@ Camera/Image
 - `/yolo/detections` remains unchanged as a symbol-level stream.
 - `/yolo/kfs_instances` serves as the new recommended runtime contract for downstream modules (e.g., Planning, Localizer).
 - Existing ROS outputs were preserved to prevent breaking legacy debug tools.
+
+## Terminology Update
+
+Older action-oriented wording from earlier development:
+
+- `collect`
+- `avoid`
+- `unknown`
+
+Current OpenVision-v3 runtime wording:
+
+- `legal`
+- `illegal`
+- `unknown`
+
+Direct robot action is downstream strategy work, not the final label set of the vision node.
 
 ## 3. KFSInstanceAggregator Runtime Port
 
@@ -71,7 +85,7 @@ To provide a clean long-term contract, custom ROS messages were implemented:
 Represents a fully interpreted KFS:
 - `cluster_id`: Unique ID for the instance in the current frame.
 - `group_type`: Semantic type (REAL, FAKE, R1, etc.).
-- `decision`: Final action (COLLECT, AVOID, UNKNOWN).
+- `decision`: Final legality label (`legal`, `illegal`, `unknown`).
 - `confidence`: Instance-level confidence proxy.
 - `bbox`: `vision_msgs/BoundingBox2D` of the KFS body.
 - `bbox_quality`: Metadata (normal, clipped, etc.).
@@ -122,7 +136,7 @@ The `TeamColorFilter` was extended to support arbitrary `cv::Rect` crops. In the
 - **Rationale:** Symbol bounding boxes are often too small and dominated by sticker/symbol pixels. Evaluating the whole KFS body provides much higher color matching confidence.
 
 **Key Metrics:**
-- `team_color_match` is now the primary driver for `COLLECT` decisions.
+- `team_color_match` is now the primary driver for `legal` decisions.
 - `color_mask_coverage` is used to filter out noise and background reflections.
 
 ## 8. Instance-Level DecisionEngine
@@ -130,12 +144,12 @@ The `TeamColorFilter` was extended to support arbitrary `cv::Rect` crops. In the
 The `DecisionEngine` now processes `KFSInstance` objects. It uses a combination of semantic group type and color matching results.
 
 **Instance Decision Logic:**
-- `FAKE` → `AVOID`
-- `R1` → `AVOID`
-- `AMBIGUOUS` → `UNKNOWN` (or dropped)
-- `REAL` + `team_color_match` + `conf > threshold` → `COLLECT`
-- `REAL` without color match → `UNKNOWN`
-- Unsupported groups → `UNKNOWN`
+- `FAKE` -> `illegal`
+- `R1` -> `illegal`
+- `AMBIGUOUS` -> `unknown` (or dropped)
+- `REAL` + `team_color_match` + `conf > threshold` -> `legal`
+- `REAL` without strong color match -> `unknown`
+- Unsupported groups -> `unknown`
 
 ## 9. Runtime Logging Improvements
 
@@ -189,3 +203,20 @@ ros2 topic echo /yolo/kfs_instances --once
 - KFS instances are now published with custom ROS messages.
 - Instance-level color filtering and decisions are active.
 - This is a strong checkpoint before connecting to BlockLocalizer, tracking, closest-KFS selection, or planning.
+
+## Current OpenVision-v3 Status
+
+This milestone is the first full KFS-level runtime milestone in the current architecture.
+
+It established:
+
+- `/yolo/kfs_instances`
+- `KfsInstance.msg`
+- `KfsInstanceArray.msg`
+- instance-level TeamColorFilter
+- instance-level legality interpretation
+
+## Relationship to Later Milestones
+
+- This runtime milestone is the base for `2026-04-27_06_OpenVisionV3_KFS3DLocalizer.md`
+- it is later extended by localization stabilization, runtime safety, ONNX baseline benchmarking, and TensorRT backend architecture work

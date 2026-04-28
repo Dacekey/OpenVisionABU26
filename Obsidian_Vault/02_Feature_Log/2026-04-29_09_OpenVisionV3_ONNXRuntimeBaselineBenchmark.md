@@ -1,4 +1,4 @@
-# OpenVision-v3 – ONNX Runtime Baseline Benchmark Instrumentation
+# OpenVision-v3 – ONNX Runtime Baseline Benchmark
 
 ## 1. Overview
 
@@ -257,6 +257,12 @@ Future TensorRT evaluation should compare:
 **Important interpretation rule:**
 - TensorRT conversion should only be considered meaningful if it improves actual runtime pipeline latency, not only model-only inference timing.
 
+## Current OpenVision-v3 Status
+
+This log is the current ONNX Runtime baseline reference for later backend comparison.
+
+It does not claim TensorRT performance, and it should be read as the benchmark baseline for the current default backend only.
+
 ## 10. Future Work
 
 - Convert backend from ONNX Runtime to TensorRT Runtime
@@ -265,6 +271,11 @@ Future TensorRT evaluation should compare:
 - Add optional CSV/JSON benchmark export if needed
 - Consider NVMM / zero-copy optimization only if benchmark shows camera/copy bottleneck
 - Continue monitoring timeout/failure count during longer tests
+
+## Relationship to Later Milestones
+
+- This benchmark baseline directly feeds `2026-04-29_10_OpenVisionV3_TensorRTBackendArchitecture.md`
+- live TensorRT benchmark comparison remains future work on Jetson Nano
 
 ## 11. Suggested Commit Message
 
