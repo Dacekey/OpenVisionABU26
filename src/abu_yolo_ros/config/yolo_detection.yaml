@@ -18,6 +18,21 @@ yolo_detection_node:
       /yolo/detections
 
     use_gpu: true
+    inference.backend: "onnxruntime"
+    inference.fallback_backend: "onnxruntime"
+    inference.allow_fallback: true
+    inference.onnx.model_path: "/home/dacekey/openvision_ros2_ws_v2/src/abu_yolo_ros/models/fptu_abu26_detect_yolo_v1.onnx"
+    inference.onnx.use_gpu: true
+    inference.tensorrt.engine_path: "/home/dacekey/openvision_ros2_ws_v2/src/abu_yolo_ros/models/fptu_abu26_detect_yolo_v1.engine"
+    inference.tensorrt.input_name: ""
+    inference.tensorrt.output_name: ""
+    inference.tensorrt.input_width: 640
+    inference.tensorrt.input_height: 640
+    inference.tensorrt.fp16: true
+    inference.tensorrt.workspace_size_mb: 1024
+    inference.tensorrt.allow_engine_rebuild: false
+    inference.tensorrt.onnx_model_path_for_build: "/home/dacekey/openvision_ros2_ws_v2/src/abu_yolo_ros/models/fptu_abu26_detect_yolo_v1.onnx"
+    inference.nms_threshold: 0.45
 
     conf_threshold: 0.25
 

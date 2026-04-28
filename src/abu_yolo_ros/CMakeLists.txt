@@ -2,6 +2,7 @@ cmake_minimum_required(VERSION 3.8)
 project(abu_yolo_ros)
 
 include(CTest)
+option(ENABLE_TENSORRT "Enable TensorRT backend when libraries are available" ON)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -36,6 +37,49 @@ include_directories(
 )
 
 link_directories(${ONNXRUNTIME_DIR}/lib)
+
+set(ABU_YOLO_ROS_TENSORRT_ENABLED FALSE)
+if(ENABLE_TENSORRT)
+  find_path(TENSORRT_INCLUDE_DIR
+    NvInfer.h
+    PATHS
+      /usr/include
+      /usr/include/x86_64-linux-gnu
+      /usr/local/include
+      /usr/local/TensorRT/include
+  )
+  find_library(TENSORRT_NVINFER_LIBRARY
+    nvinfer
+    PATHS
+      /usr/lib
+      /usr/lib/x86_64-linux-gnu
+      /usr/local/lib
+      /usr/local/TensorRT/lib
+  )
+  find_library(TENSORRT_NVINFER_PLUGIN_LIBRARY
+    nvinfer_plugin
+    PATHS
+      /usr/lib
+      /usr/lib/x86_64-linux-gnu
+      /usr/local/lib
+      /usr/local/TensorRT/lib
+  )
+  find_library(CUDART_LIBRARY
+    cudart
+    PATHS
+      /usr/lib
+      /usr/lib/x86_64-linux-gnu
+      /usr/local/cuda/lib64
+      /usr/local/lib
+  )
+
+  if(TENSORRT_INCLUDE_DIR AND TENSORRT_NVINFER_LIBRARY AND TENSORRT_NVINFER_PLUGIN_LIBRARY AND CUDART_LIBRARY)
+    set(ABU_YOLO_ROS_TENSORRT_ENABLED TRUE)
+    message(STATUS "TensorRT backend enabled")
+  else()
+    message(WARNING "TensorRT requested but not found; building ONNX Runtime backend only")
+  endif()
+endif()
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/KfsInstance.msg"
@@ -87,6 +131,9 @@ install(TARGETS
 add_executable(yolo_detection_node
   src/yolo_detection_node.cpp
   src/yolo_detector.cpp
+  src/onnx_runtime_backend.cpp
+  src/tensorrt_backend.cpp
+  src/yolo_inference_utils.cpp
   src/team_color_filter.cpp
   src/decision_engine.cpp
   src/kfs_instance_aggregator.cpp
@@ -105,11 +152,27 @@ rosidl_get_typesupport_target(cpp_typesupport_target
   ${PROJECT_NAME} "rosidl_typesupport_cpp")
 target_link_libraries(yolo_detection_node ${cpp_typesupport_target})
 
+target_include_directories(yolo_detection_node PRIVATE include)
+
+if(ABU_YOLO_ROS_TENSORRT_ENABLED)
+  target_compile_definitions(yolo_detection_node PRIVATE ABU_YOLO_ROS_HAS_TENSORRT=1)
+  target_include_directories(yolo_detection_node PRIVATE ${TENSORRT_INCLUDE_DIR})
+endif()
+
 target_link_libraries(
   yolo_detection_node
   ${OpenCV_LIBS}
   ${ONNXRUNTIME_LIBRARY}
 )
+
+if(ABU_YOLO_ROS_TENSORRT_ENABLED)
+  target_link_libraries(
+    yolo_detection_node
+    ${TENSORRT_NVINFER_LIBRARY}
+    ${TENSORRT_NVINFER_PLUGIN_LIBRARY}
+    ${CUDART_LIBRARY}
+  )
+endif()
 
 install(TARGETS
   yolo_detection_node

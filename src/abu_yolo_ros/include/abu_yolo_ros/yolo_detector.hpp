@@ -5,21 +5,30 @@
 #include <vector>
 
 #include <opencv2/opencv.hpp>
-#include <onnxruntime_cxx_api.h>
 
+#include "abu_yolo_ros/inference_backend.hpp"
+#include "abu_yolo_ros/onnx_runtime_backend.hpp"
+#include "abu_yolo_ros/tensorrt_backend.hpp"
 #include "abu_yolo_ros/detection_types.hpp"
 
 namespace abu_yolo_ros {
 
+struct YoloDetectorConfig {
+    std::string requested_backend = "onnxruntime";
+    std::string fallback_backend = "onnxruntime";
+    bool allow_fallback = true;
+    std::string class_names_path;
+    OnnxRuntimeBackendConfig onnx;
+    TensorRtBackendConfig tensorrt;
+};
+
 class YOLODetector {
 public:
-    YOLODetector(const std::string& model_path,
-             const std::string& class_names_path,
-             bool use_gpu = true);
+    explicit YOLODetector(YoloDetectorConfig config);
 
     void printModelInfo() const;
 
-    std::vector<Detection> infer(const cv::Mat& image) const;
+    std::vector<Detection> infer(const cv::Mat& image);
 
     cv::Mat drawDetections(const cv::Mat& image,
                            const std::vector<Detection>& detections) const;
@@ -27,21 +36,27 @@ public:
     std::string getClassLabel(int class_id) const;
 
     // giu tam de tuong thich code cu
-    cv::Mat inferAndDraw(const cv::Mat& image) const;
+    cv::Mat inferAndDraw(const cv::Mat& image);
+
+    std::string backendName() const;
+    std::string requestedBackendName() const;
+    bool usingFallbackBackend() const;
 
 private:
-    std::vector<float> preprocess(const cv::Mat& image) const;
+    std::unique_ptr<InferenceBackend> makeBackend(
+        const std::string& backend_name) const;
+    static std::string normalizeBackendName(
+        const std::string& backend_name);
+    void loadClassNames();
+    void loadBackendOrThrow();
 
 private:
-    Ort::Env env_;
-    Ort::SessionOptions session_options_;
-    std::unique_ptr<Ort::Session> session_;
-
-    std::vector<std::string> input_names_;
-    std::vector<std::string> output_names_;
+    YoloDetectorConfig config_;
+    std::unique_ptr<InferenceBackend> backend_;
+    std::string requested_backend_name_;
+    std::string active_backend_name_;
+    bool using_fallback_backend_ = false;
     std::vector<std::string> class_names_;
-    std::vector<std::vector<int64_t>> input_shapes_;
-    std::vector<std::vector<int64_t>> output_shapes_;
 };
 
 }  // namespace abu_yolo_ros

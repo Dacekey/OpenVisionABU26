@@ -291,9 +291,80 @@ The stabilizer uses a small constant-velocity Kalman filter with conservative ga
 
 The OpenVision-v3 perception runtime now also uses sensor-style QoS on its realtime vision streams and adds local runtime hardening inside `yolo_detection_node`: an inference mutex with optional busy-frame drop, plus a lightweight circuit breaker for repeated inference failures/timeouts. When that circuit breaker is OPEN, the node skips inference and skips publishing fresh perception outputs for that frame rather than publishing empty arrays. No separate health/status topic is emitted yet.
 
-The same `yolo_detection_node` now also includes ONNX Runtime baseline benchmark instrumentation for the current OpenVision-v3 pipeline. This is measurement-only instrumentation around the existing C++ runtime and is intended to establish a stable ONNX Runtime latency/FPS baseline before any later TensorRT backend conversion. It does not change inference outputs, TeamColorFilter logic, DecisionEngine logic, KFS aggregation, 3D localization, localization stabilization, message contracts, or topic names.
+## Inference Backend Selection
 
-### ONNX Runtime Baseline Benchmark
+`yolo_detection_node` now supports a config-driven inference backend selection layer.
+
+- Current default backend: ONNX Runtime
+- Optional backend: TensorRT Runtime
+- ONNX Runtime remains the fallback backend
+
+Backend selection lives under `inference.*` in `src/abu_yolo_ros/config/yolo_detection.yaml`:
+
+```yaml
+inference.backend: "onnxruntime"
+inference.fallback_backend: "onnxruntime"
+inference.allow_fallback: true
+inference.onnx.model_path: "/home/dacekey/openvision_ros2_ws_v2/src/abu_yolo_ros/models/fptu_abu26_detect_yolo_v1.onnx"
+inference.onnx.use_gpu: true
+inference.tensorrt.engine_path: "/home/dacekey/openvision_ros2_ws_v2/src/abu_yolo_ros/models/fptu_abu26_detect_yolo_v1.engine"
+inference.tensorrt.input_name: ""
+inference.tensorrt.output_name: ""
+inference.tensorrt.input_width: 640
+inference.tensorrt.input_height: 640
+inference.tensorrt.fp16: true
+inference.tensorrt.workspace_size_mb: 1024
+inference.tensorrt.allow_engine_rebuild: false
+inference.tensorrt.onnx_model_path_for_build: "/home/dacekey/openvision_ros2_ws_v2/src/abu_yolo_ros/models/fptu_abu26_detect_yolo_v1.onnx"
+inference.nms_threshold: 0.45
+```
+
+Backend switching is parameter-driven and does not change ROS message contracts, topic names, KFS aggregation, TeamColorFilter, DecisionEngine, 3D localization, or localization stabilization.
+
+To run the default ONNX Runtime backend:
+
+```bash
+ros2 launch abu_yolo_ros yolo.launch.py
+```
+
+To request TensorRT Runtime:
+
+```bash
+ros2 launch abu_yolo_ros yolo.launch.py inference.backend:=tensorrt
+```
+
+If TensorRT support was not compiled, the engine file is missing, or TensorRT engine loading fails, the runtime can fall back to ONNX Runtime when `inference.allow_fallback=true`.
+
+### Building a TensorRT Engine
+
+The runtime primarily supports loading an existing TensorRT engine. In-runtime engine rebuild is not implemented, so the recommended path is to build the engine externally with `trtexec`.
+
+Example:
+
+```bash
+trtexec \
+  --onnx=src/abu_yolo_ros/models/fptu_abu26_detect_yolo_v1.onnx \
+  --saveEngine=src/abu_yolo_ros/models/fptu_abu26_detect_yolo_v1.engine \
+  --fp16 \
+  --workspace=1024
+```
+
+TensorRT / `trtexec` flags vary by release, so verify the exact syntax with:
+
+```bash
+trtexec --help
+```
+
+The TensorRT engine must match:
+
+- the model
+- the input resolution
+- the TensorRT version
+- the target GPU architecture / Jetson target
+
+### Runtime Benchmark
+
+The same `yolo_detection_node` includes runtime benchmark instrumentation for direct ONNX Runtime vs TensorRT Runtime comparison. This is measurement-only instrumentation around the existing C++ runtime and does not change inference outputs, TeamColorFilter logic, DecisionEngine logic, KFS aggregation, 3D localization, localization stabilization, message contracts, or topic names.
 
 Benchmark configuration lives under `runtime_benchmark.*` in `src/abu_yolo_ros/config/yolo_detection.yaml`:
 
@@ -341,16 +412,26 @@ The benchmark is intentionally lightweight:
 - it uses `std::chrono` timing only
 - it does not add new ROS topics
 - it does not alter inference behavior or model outputs
-- it does not implement TensorRT in this step
-- it does not implement NVMM or zero-copy in this step
+- it works with both ONNX Runtime and TensorRT Runtime
+- it does not implement NVMM or zero-copy by itself
 
 Expected summary logs look like:
 
 ```text
-ONNX benchmark frames=100 fps=29.4 total mean=31.8ms p95=42.1ms p99=55.0ms | preprocess mean=2.1ms | infer mean=18.4ms p95=25.6ms | postprocess mean=1.8ms | color mean=1.2ms | kfs_agg mean=2.4ms | publish mean=0.6ms | dropped=0 timeout=0 failures=0 warmup_skipped=20 circuit=CLOSED
+Runtime benchmark backend=onnxruntime frames=100 fps=29.4 total mean=31.8ms p95=42.1ms p99=55.0ms | preprocess mean=2.1ms | infer mean=18.4ms p95=25.6ms | postprocess mean=1.8ms | color mean=1.2ms | kfs_agg mean=2.4ms | publish mean=0.6ms | dropped=0 timeout=0 failures=0 warmup_skipped=20 circuit=CLOSED
 ```
 
-This benchmark is the baseline reference for future backend comparison. TensorRT benchmarking should be added only after a real backend conversion exists. NVMM / zero-copy optimization should only be considered later if the benchmark shows that camera conversion or copy overhead is a real bottleneck.
+For backend comparison, keep the same:
+
+- model
+- image resolution
+- input source
+- hardware
+- runtime config
+- test conditions
+- benchmark stages
+
+NVMM / zero-copy optimization should only be considered later if the benchmark shows that camera conversion or copy overhead is a real bottleneck.
 
 `/yolo/kfs_instances/image_annotated` remains a debug-only visualization topic for final KFS instance aggregation boxes. It can also draw the aggregation ROI overlay, and that ROI should match the actual filtering region used by the runtime aggregator. It does not change the existing `/yolo/detections` or `/yolo/image_annotated` outputs.
 

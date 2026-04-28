@@ -1,5 +1,7 @@
 from launch import LaunchDescription
+from launch.actions import DeclareLaunchArgument
 from launch_ros.actions import Node
+from launch.substitutions import LaunchConfiguration
 from launch.substitutions import PathJoinSubstitution
 from launch_ros.substitutions import FindPackageShare
 
@@ -10,8 +12,15 @@ def generate_launch_description():
         "config",
         "yolo_detection.yaml"
     ])
+    inference_backend = LaunchConfiguration("inference_backend")
 
     return LaunchDescription([
+        DeclareLaunchArgument(
+            "inference_backend",
+            default_value="onnxruntime",
+            description="Inference backend for yolo_detection_node: onnxruntime or tensorrt",
+        ),
+
         Node(
             package="usb_cam",
             executable="usb_cam_node_exe",
@@ -29,7 +38,12 @@ def generate_launch_description():
             executable="yolo_detection_node",
             name="yolo_detection_node",
             output="screen",
-            parameters=[config_file]
+            parameters=[
+                config_file,
+                {
+                    "inference.backend": inference_backend
+                }
+            ]
         ),
 
         Node(

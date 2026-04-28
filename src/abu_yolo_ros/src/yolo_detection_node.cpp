@@ -40,12 +40,28 @@ public:
         this->declare_parameter<std::string>("output_topic", "/yolo/image_annotated");
         this->declare_parameter<std::string>("detection_topic", "/yolo/detections");
         this->declare_parameter<bool>("use_gpu", true);
+        this->declare_parameter<std::string>("inference.backend", "onnxruntime");
+        this->declare_parameter<std::string>("inference.fallback_backend", "onnxruntime");
+        this->declare_parameter<bool>("inference.allow_fallback", true);
+        this->declare_parameter<std::string>("inference.onnx.model_path", "");
+        this->declare_parameter<bool>("inference.onnx.use_gpu", true);
+        this->declare_parameter<std::string>("inference.tensorrt.engine_path", "");
+        this->declare_parameter<std::string>("inference.tensorrt.input_name", "");
+        this->declare_parameter<std::string>("inference.tensorrt.output_name", "");
+        this->declare_parameter<int>("inference.tensorrt.input_width", 640);
+        this->declare_parameter<int>("inference.tensorrt.input_height", 640);
+        this->declare_parameter<bool>("inference.tensorrt.fp16", true);
+        this->declare_parameter<int>("inference.tensorrt.workspace_size_mb", 1024);
+        this->declare_parameter<bool>("inference.tensorrt.allow_engine_rebuild", false);
+        this->declare_parameter<std::string>("inference.tensorrt.onnx_model_path_for_build", "");
+        this->declare_parameter<double>("inference.nms_threshold", 0.45);
         this->declare_parameter<bool>("visualize", true);
         this->declare_parameter<bool>("log_timing", false);
         this->declare_parameter<int>("skip_frames", 0);
         this->declare_parameter<bool>("debug_detections", true);
         this->declare_parameter<bool>("enable_team_color_filter", true);
         this->declare_parameter<std::string>("team_color", "red");
+        this->declare_parameter<double>("conf_threshold", 0.25);
         this->declare_parameter<bool>("runtime_safety.qos.use_sensor_data_qos", true);
         this->declare_parameter<int>("runtime_safety.qos.queue_depth", 1);
         this->declare_parameter<bool>(
@@ -227,6 +243,21 @@ public:
         this->get_parameter("output_topic", output_topic_);
         this->get_parameter("detection_topic", detection_topic_);
         this->get_parameter("use_gpu", use_gpu_);
+        this->get_parameter("inference.backend", inference_backend_);
+        this->get_parameter("inference.fallback_backend", inference_fallback_backend_);
+        this->get_parameter("inference.allow_fallback", inference_allow_fallback_);
+        this->get_parameter("inference.onnx.model_path", inference_onnx_model_path_);
+        this->get_parameter("inference.onnx.use_gpu", inference_onnx_use_gpu_);
+        this->get_parameter("inference.tensorrt.engine_path", inference_tensorrt_engine_path_);
+        this->get_parameter("inference.tensorrt.input_name", inference_tensorrt_input_name_);
+        this->get_parameter("inference.tensorrt.output_name", inference_tensorrt_output_name_);
+        this->get_parameter("inference.tensorrt.input_width", inference_tensorrt_input_width_);
+        this->get_parameter("inference.tensorrt.input_height", inference_tensorrt_input_height_);
+        this->get_parameter("inference.tensorrt.fp16", inference_tensorrt_fp16_);
+        this->get_parameter("inference.tensorrt.workspace_size_mb", inference_tensorrt_workspace_size_mb_);
+        this->get_parameter("inference.tensorrt.allow_engine_rebuild", inference_tensorrt_allow_engine_rebuild_);
+        this->get_parameter("inference.tensorrt.onnx_model_path_for_build", inference_tensorrt_onnx_model_path_for_build_);
+        this->get_parameter("inference.nms_threshold", inference_nms_threshold_);
         this->get_parameter("visualize", visualize_);
         this->get_parameter("log_timing", log_timing_);
         this->get_parameter("skip_frames", skip_frames_);
@@ -235,6 +266,7 @@ public:
             "enable_team_color_filter",
             enable_team_color_filter_);
         this->get_parameter("team_color", team_color_string_);
+        this->get_parameter("conf_threshold", confidence_threshold_);
 
         // Read TeamColorFilter config
         this->get_parameter("red_h_low_1", tcf_config_.red_h_low_1);
@@ -430,11 +462,28 @@ public:
         this->get_parameter("kfs_instance_aggregation.neighbor_protection_bbox_source", aggregator_config_.neighbor_protection_bbox_source);
         this->get_parameter("kfs_instance_aggregation.edge_clip_margin_px", aggregator_config_.edge_clip_margin_px);
 
-        if (model_path_.empty())
-            throw std::runtime_error("model_path is empty");
-
         if (class_names_path_.empty())
             throw std::runtime_error("class_names_path is empty");
+
+        if (inference_onnx_model_path_.empty()) {
+            inference_onnx_model_path_ = model_path_;
+        }
+        if (model_path_.empty()) {
+            model_path_ = inference_onnx_model_path_;
+        }
+        if (inference_tensorrt_onnx_model_path_for_build_.empty()) {
+            inference_tensorrt_onnx_model_path_for_build_ = inference_onnx_model_path_;
+        }
+        if (inference_backend_.empty()) {
+            inference_backend_ = "onnxruntime";
+        }
+        if (inference_fallback_backend_.empty()) {
+            inference_fallback_backend_ = "onnxruntime";
+        }
+        if (inference_onnx_model_path_.empty()) {
+            throw std::runtime_error(
+                "inference.onnx.model_path is empty and legacy model_path is empty");
+        }
 
         if (skip_frames_ < 0)
             skip_frames_ = 0;
@@ -465,6 +514,21 @@ public:
         if (runtime_benchmark_config_.warmup_frames < 0) {
             runtime_benchmark_config_.warmup_frames = 0;
         }
+        if (inference_tensorrt_input_width_ < 1) {
+            inference_tensorrt_input_width_ = 640;
+        }
+        if (inference_tensorrt_input_height_ < 1) {
+            inference_tensorrt_input_height_ = 640;
+        }
+        if (inference_tensorrt_workspace_size_mb_ < 1) {
+            inference_tensorrt_workspace_size_mb_ = 1024;
+        }
+        if (inference_nms_threshold_ <= 0.0) {
+            inference_nms_threshold_ = 0.45;
+        }
+        if (confidence_threshold_ <= 0.0) {
+            confidence_threshold_ = 0.25;
+        }
 
         reserveBenchmarkStorage();
 
@@ -491,9 +555,31 @@ public:
         decision_config_ =
             abu_yolo_ros::normalizeDecisionConfig(decision_config_);
 
-        RCLCPP_INFO(this->get_logger(), "Loading YOLO model...");
-        RCLCPP_INFO(this->get_logger(), "Using GPU: %s",
+        RCLCPP_INFO(this->get_logger(), "Loading YOLO runtime...");
+        RCLCPP_INFO(this->get_logger(), "Legacy ONNX GPU flag: %s",
                     use_gpu_ ? "true" : "false");
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Inference config: backend=%s fallback_backend=%s allow_fallback=%s conf_threshold=%.2f nms_threshold=%.2f",
+            inference_backend_.c_str(),
+            inference_fallback_backend_.c_str(),
+            inference_allow_fallback_ ? "true" : "false",
+            confidence_threshold_,
+            inference_nms_threshold_);
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Inference ONNX: model=%s use_gpu=%s",
+            inference_onnx_model_path_.c_str(),
+            inference_onnx_use_gpu_ ? "true" : "false");
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Inference TensorRT: engine=%s input=%dx%d fp16=%s workspace_size_mb=%d allow_engine_rebuild=%s",
+            inference_tensorrt_engine_path_.c_str(),
+            inference_tensorrt_input_width_,
+            inference_tensorrt_input_height_,
+            inference_tensorrt_fp16_ ? "true" : "false",
+            inference_tensorrt_workspace_size_mb_,
+            inference_tensorrt_allow_engine_rebuild_ ? "true" : "false");
         RCLCPP_INFO(
             this->get_logger(),
             "Team color filter: %s | team=%s",
@@ -584,10 +670,37 @@ public:
             runtime_benchmark_config_.reset_after_summary ? "true" : "false",
             runtime_benchmark_config_.include_publish_time ? "true" : "false");
 
+        abu_yolo_ros::YoloDetectorConfig detector_config;
+        detector_config.requested_backend = inference_backend_;
+        detector_config.fallback_backend = inference_fallback_backend_;
+        detector_config.allow_fallback = inference_allow_fallback_;
+        detector_config.class_names_path = class_names_path_;
+        detector_config.onnx.model_path = inference_onnx_model_path_;
+        detector_config.onnx.use_gpu = inference_onnx_use_gpu_;
+        detector_config.onnx.conf_threshold = static_cast<float>(confidence_threshold_);
+        detector_config.onnx.nms_threshold = static_cast<float>(inference_nms_threshold_);
+        detector_config.tensorrt.engine_path = inference_tensorrt_engine_path_;
+        detector_config.tensorrt.input_name = inference_tensorrt_input_name_;
+        detector_config.tensorrt.output_name = inference_tensorrt_output_name_;
+        detector_config.tensorrt.input_width = inference_tensorrt_input_width_;
+        detector_config.tensorrt.input_height = inference_tensorrt_input_height_;
+        detector_config.tensorrt.fp16 = inference_tensorrt_fp16_;
+        detector_config.tensorrt.workspace_size_mb = inference_tensorrt_workspace_size_mb_;
+        detector_config.tensorrt.allow_engine_rebuild = inference_tensorrt_allow_engine_rebuild_;
+        detector_config.tensorrt.onnx_model_path_for_build =
+            inference_tensorrt_onnx_model_path_for_build_;
+        detector_config.tensorrt.conf_threshold = static_cast<float>(confidence_threshold_);
+        detector_config.tensorrt.nms_threshold = static_cast<float>(inference_nms_threshold_);
+
         detector_ = std::make_unique<abu_yolo_ros::YOLODetector>(
-            model_path_,
-            class_names_path_,
-            use_gpu_);
+            detector_config);
+        active_inference_backend_name_ = detector_->backendName();
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Inference backend: requested=%s active=%s fallback=%s",
+            detector_->requestedBackendName().c_str(),
+            active_inference_backend_name_.c_str(),
+            detector_->usingFallbackBackend() ? "true" : "false");
         aggregator_ =
             std::make_unique<abu_yolo_ros::KFSInstanceAggregator>(
                 aggregator_config_);
@@ -933,6 +1046,17 @@ private:
         return CircuitBreaker::stateString(circuit_breaker_.state);
     }
 
+    std::string currentInferenceBackendName() const
+    {
+        if (!active_inference_backend_name_.empty()) {
+            return active_inference_backend_name_;
+        }
+        if (detector_) {
+            return detector_->backendName();
+        }
+        return "unknown";
+    }
+
     void logBenchmarkSummary(const RuntimeBenchmarkSnapshot& snapshot) const
     {
         const auto& total_summary = snapshot.stages[kTotalStage];
@@ -943,7 +1067,9 @@ private:
 
         std::ostringstream stream;
         stream << std::fixed << std::setprecision(1);
-        stream << "ONNX benchmark frames=" << snapshot.window_frames
+        stream << "Runtime benchmark backend="
+               << currentInferenceBackendName()
+               << " frames=" << snapshot.window_frames
                << " fps=" << estimated_fps;
 
         if (total_summary.has_samples) {
@@ -1000,7 +1126,9 @@ private:
     {
         std::ostringstream stream;
         stream << std::fixed << std::setprecision(2);
-        stream << "ONNX benchmark frame total="
+        stream << "Runtime benchmark backend="
+               << currentInferenceBackendName()
+               << " frame total="
                << frame.stage_ms[kTotalStage] << "ms"
                << " preprocess=" << frame.stage_ms[kPreprocessStage] << "ms"
                << " infer=" << frame.stage_ms[kInferenceStage] << "ms"
@@ -2304,8 +2432,20 @@ private:
     std::string input_topic_;
     std::string output_topic_;
     std::string detection_topic_ = "/yolo/detections";
+    std::string inference_backend_ = "onnxruntime";
+    std::string inference_fallback_backend_ = "onnxruntime";
+    std::string inference_onnx_model_path_;
+    std::string inference_tensorrt_engine_path_;
+    std::string inference_tensorrt_input_name_;
+    std::string inference_tensorrt_output_name_;
+    std::string inference_tensorrt_onnx_model_path_for_build_;
+    std::string active_inference_backend_name_ = "unknown";
 
     bool use_gpu_;
+    bool inference_allow_fallback_ = true;
+    bool inference_onnx_use_gpu_ = true;
+    bool inference_tensorrt_fp16_ = true;
+    bool inference_tensorrt_allow_engine_rebuild_ = false;
     bool visualize_;
     bool log_timing_;
     bool debug_detections_;
@@ -2314,8 +2454,13 @@ private:
     bool kfs_publish_debug_image_;
 
     int skip_frames_;
+    int inference_tensorrt_input_width_ = 640;
+    int inference_tensorrt_input_height_ = 640;
+    int inference_tensorrt_workspace_size_mb_ = 1024;
     int runtime_qos_depth_ = 1;
     uint64_t frame_count_;
+    double confidence_threshold_ = 0.25;
+    double inference_nms_threshold_ = 0.45;
     double busy_log_throttle_sec_ = 1.0;
     double inference_timeout_ms_ = 100.0;
     double circuit_breaker_log_throttle_sec_ = 1.0;
