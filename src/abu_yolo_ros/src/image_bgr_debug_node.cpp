@@ -6,6 +6,9 @@
 #include <opencv2/opencv.hpp>
 #include <cv_bridge/cv_bridge.hpp>
 
+// Debug utility node:
+// converts the raw /image_raw feed into a BGR debug topic for inspection in
+// developer tools. It is not part of the main production perception pipeline.
 class ImageBGRDebugNode : public rclcpp::Node {
 public:
     ImageBGRDebugNode() : Node("image_bgr_debug_node") {

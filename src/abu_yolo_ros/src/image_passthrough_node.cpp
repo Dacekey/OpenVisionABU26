@@ -3,6 +3,9 @@
 #include "rclcpp/rclcpp.hpp"
 #include "sensor_msgs/msg/image.hpp"
 
+// Debug utility node:
+// republishes /image_raw to /yolo/image_debug unchanged so developers can
+// validate camera/topic flow without touching the main perception pipeline.
 class ImagePassthroughNode : public rclcpp::Node {
 public:
     ImagePassthroughNode() : Node("image_passthrough_node") {

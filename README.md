@@ -212,6 +212,17 @@ Expected behavior:
 - the KFS debug image can also draw the aggregation ROI when `kfs_instance_aggregation.draw_roi=true`
 - system runs stably
 
+## Developer Utilities
+
+The repository also builds two standalone image debug utility nodes for camera
+and topic validation. These are developer tools only and are not launched by
+default in the main perception pipeline.
+
+- `image_passthrough_node`
+  republishes `/image_raw` to `/yolo/image_debug` unchanged
+- `image_bgr_debug_node`
+  converts the raw image feed to `/yolo/image_bgr_debug` for BGR inspection
+
 ---
 
 # 🗂 Repository Structure
