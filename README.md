@@ -289,6 +289,8 @@ Current plane-height design:
 
 The stabilizer uses a small constant-velocity Kalman filter with conservative gating. It smooths localized KFS positions for downstream consumers, but it is not strategic KFS tracking, not closest-KFS selection, and not collection-priority memory. Visual servoing is also future work and is not implemented here.
 
+The OpenVision-v3 perception runtime now also uses sensor-style QoS on its realtime vision streams and adds local runtime hardening inside `yolo_detection_node`: an inference mutex with optional busy-frame drop, plus a lightweight circuit breaker for repeated inference failures/timeouts. When that circuit breaker is OPEN, the node skips inference and skips publishing fresh perception outputs for that frame rather than publishing empty arrays. No separate health/status topic is emitted yet.
+
 `/yolo/kfs_instances/image_annotated` remains a debug-only visualization topic for final KFS instance aggregation boxes. It can also draw the aggregation ROI overlay, and that ROI should match the actual filtering region used by the runtime aggregator. It does not change the existing `/yolo/detections` or `/yolo/image_annotated` outputs.
 
 To inspect it at runtime:

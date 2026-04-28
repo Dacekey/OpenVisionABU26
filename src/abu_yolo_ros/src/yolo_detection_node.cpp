@@ -2,6 +2,7 @@
 #include <cmath>
 #include <iomanip>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -29,13 +30,12 @@ public:
         : Node("yolo_detection_node"),
           frame_count_(0) {
 
-        auto qos = rclcpp::SensorDataQoS();
-
         // Parameters
         this->declare_parameter<std::string>("model_path", "");
         this->declare_parameter<std::string>("class_names_path", "");
         this->declare_parameter<std::string>("input_topic", "/image_raw");
         this->declare_parameter<std::string>("output_topic", "/yolo/image_annotated");
+        this->declare_parameter<std::string>("detection_topic", "/yolo/detections");
         this->declare_parameter<bool>("use_gpu", true);
         this->declare_parameter<bool>("visualize", true);
         this->declare_parameter<bool>("log_timing", false);
@@ -43,6 +43,35 @@ public:
         this->declare_parameter<bool>("debug_detections", true);
         this->declare_parameter<bool>("enable_team_color_filter", true);
         this->declare_parameter<std::string>("team_color", "red");
+        this->declare_parameter<bool>("runtime_safety.qos.use_sensor_data_qos", true);
+        this->declare_parameter<int>("runtime_safety.qos.queue_depth", 1);
+        this->declare_parameter<bool>(
+            "runtime_safety.threading.protect_inference_with_mutex",
+            true);
+        this->declare_parameter<bool>(
+            "runtime_safety.threading.drop_frame_when_busy",
+            true);
+        this->declare_parameter<double>(
+            "runtime_safety.threading.busy_log_throttle_sec",
+            1.0);
+        this->declare_parameter<bool>(
+            "runtime_safety.circuit_breaker.enabled",
+            true);
+        this->declare_parameter<int>(
+            "runtime_safety.circuit_breaker.failure_threshold",
+            5);
+        this->declare_parameter<int>(
+            "runtime_safety.circuit_breaker.success_threshold",
+            3);
+        this->declare_parameter<double>(
+            "runtime_safety.circuit_breaker.reset_timeout_sec",
+            2.0);
+        this->declare_parameter<double>(
+            "runtime_safety.circuit_breaker.inference_timeout_ms",
+            100.0);
+        this->declare_parameter<double>(
+            "runtime_safety.circuit_breaker.log_throttle_sec",
+            1.0);
 
         // TeamColorFilter parameters
         this->declare_parameter<int>("red_h_low_1", 0);
@@ -175,6 +204,7 @@ public:
         this->get_parameter("class_names_path", class_names_path_);
         this->get_parameter("input_topic", input_topic_);
         this->get_parameter("output_topic", output_topic_);
+        this->get_parameter("detection_topic", detection_topic_);
         this->get_parameter("use_gpu", use_gpu_);
         this->get_parameter("visualize", visualize_);
         this->get_parameter("log_timing", log_timing_);
@@ -226,6 +256,39 @@ public:
         this->get_parameter(
             "unknown_on_low_confidence",
             decision_config_.unknown_on_low_confidence);
+        this->get_parameter(
+            "runtime_safety.qos.use_sensor_data_qos",
+            use_sensor_data_qos_);
+        this->get_parameter(
+            "runtime_safety.qos.queue_depth",
+            runtime_qos_depth_);
+        this->get_parameter(
+            "runtime_safety.threading.protect_inference_with_mutex",
+            protect_inference_with_mutex_);
+        this->get_parameter(
+            "runtime_safety.threading.drop_frame_when_busy",
+            drop_frame_when_busy_);
+        this->get_parameter(
+            "runtime_safety.threading.busy_log_throttle_sec",
+            busy_log_throttle_sec_);
+        this->get_parameter(
+            "runtime_safety.circuit_breaker.enabled",
+            circuit_breaker_.enabled);
+        this->get_parameter(
+            "runtime_safety.circuit_breaker.failure_threshold",
+            circuit_breaker_.failure_threshold);
+        this->get_parameter(
+            "runtime_safety.circuit_breaker.success_threshold",
+            circuit_breaker_.success_threshold);
+        this->get_parameter(
+            "runtime_safety.circuit_breaker.reset_timeout_sec",
+            circuit_breaker_.reset_timeout_sec);
+        this->get_parameter(
+            "runtime_safety.circuit_breaker.inference_timeout_ms",
+            inference_timeout_ms_);
+        this->get_parameter(
+            "runtime_safety.circuit_breaker.log_throttle_sec",
+            circuit_breaker_log_throttle_sec_);
         this->get_parameter("kfs_instance_aggregation.enabled", aggregator_config_.enable_aggregation);
         this->get_parameter("kfs_instance_aggregation.debug_instances", aggregator_config_.debug_instances);
         this->get_parameter("kfs_instance_aggregation.publish_instances", kfs_publish_instances_);
@@ -336,6 +399,27 @@ public:
 
         if (skip_frames_ < 0)
             skip_frames_ = 0;
+        if (runtime_qos_depth_ < 1) {
+            runtime_qos_depth_ = 1;
+        }
+        if (busy_log_throttle_sec_ < 0.0) {
+            busy_log_throttle_sec_ = 1.0;
+        }
+        if (circuit_breaker_.failure_threshold < 1) {
+            circuit_breaker_.failure_threshold = 1;
+        }
+        if (circuit_breaker_.success_threshold < 1) {
+            circuit_breaker_.success_threshold = 1;
+        }
+        if (circuit_breaker_.reset_timeout_sec < 0.0) {
+            circuit_breaker_.reset_timeout_sec = 0.0;
+        }
+        if (inference_timeout_ms_ < 0.0) {
+            inference_timeout_ms_ = 0.0;
+        }
+        if (circuit_breaker_log_throttle_sec_ < 0.0) {
+            circuit_breaker_log_throttle_sec_ = 1.0;
+        }
 
         my_team_ =
             abu_yolo_ros::parseTeamColor(team_color_string_);
@@ -424,6 +508,25 @@ public:
              kfs_publish_debug_image_) ? "enabled" : "disabled",
             kfs_debug_image_topic_.c_str(),
             aggregator_config_.draw_roi ? "true" : "false");
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Runtime safety QoS: mode=%s depth=%d",
+            use_sensor_data_qos_ ? "sensor_data/best_effort" : "default",
+            runtime_qos_depth_);
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Runtime safety threading: protect_inference_with_mutex=%s drop_frame_when_busy=%s busy_log_throttle_sec=%.2f",
+            protect_inference_with_mutex_ ? "true" : "false",
+            drop_frame_when_busy_ ? "true" : "false",
+            busy_log_throttle_sec_);
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Runtime safety circuit breaker: %s failure_threshold=%d success_threshold=%d reset_timeout_sec=%.2f inference_timeout_ms=%.2f",
+            circuit_breaker_.enabled ? "enabled" : "disabled",
+            circuit_breaker_.failure_threshold,
+            circuit_breaker_.success_threshold,
+            circuit_breaker_.reset_timeout_sec,
+            inference_timeout_ms_);
 
         detector_ = std::make_unique<abu_yolo_ros::YOLODetector>(
             model_path_,
@@ -432,6 +535,8 @@ public:
         aggregator_ =
             std::make_unique<abu_yolo_ros::KFSInstanceAggregator>(
                 aggregator_config_);
+
+        const auto qos = makePerceptionQoS();
 
         sub_ = this->create_subscription<sensor_msgs::msg::Image>(
             input_topic_,
@@ -449,7 +554,7 @@ public:
             this->create_publisher<
                 vision_msgs::msg::Detection2DArray
             >(
-                "/yolo/detections",
+                detection_topic_,
                 qos
             );
         kfs_instances_pub_ =
@@ -470,6 +575,116 @@ public:
 
 private:
 
+    struct CircuitBreaker {
+        enum class State {
+            CLOSED,
+            OPEN,
+            HALF_OPEN
+        };
+
+        bool enabled = true;
+        int failure_threshold = 5;
+        int success_threshold = 3;
+        double reset_timeout_sec = 2.0;
+        State state = State::CLOSED;
+        int consecutive_failures = 0;
+        int consecutive_successes = 0;
+        std::chrono::steady_clock::time_point opened_at{};
+
+        bool allowInference(
+            const std::chrono::steady_clock::time_point& now,
+            State* transition_to = nullptr)
+        {
+            if (!enabled) {
+                return true;
+            }
+            if (state != State::OPEN) {
+                return true;
+            }
+
+            const double open_duration_sec =
+                std::chrono::duration<double>(now - opened_at).count();
+            if (open_duration_sec < reset_timeout_sec) {
+                return false;
+            }
+
+            state = State::HALF_OPEN;
+            consecutive_successes = 0;
+            consecutive_failures = 0;
+            if (transition_to != nullptr) {
+                *transition_to = state;
+            }
+            return true;
+        }
+
+        void recordSuccess(State* transition_to = nullptr)
+        {
+            if (!enabled) {
+                return;
+            }
+
+            consecutive_failures = 0;
+            if (state == State::HALF_OPEN) {
+                ++consecutive_successes;
+                if (consecutive_successes >= success_threshold) {
+                    state = State::CLOSED;
+                    consecutive_successes = 0;
+                    if (transition_to != nullptr) {
+                        *transition_to = state;
+                    }
+                }
+                return;
+            }
+
+            state = State::CLOSED;
+            consecutive_successes = 0;
+        }
+
+        void recordFailure(
+            const std::chrono::steady_clock::time_point& now,
+            State* transition_to = nullptr)
+        {
+            if (!enabled) {
+                return;
+            }
+
+            consecutive_successes = 0;
+            if (state == State::HALF_OPEN) {
+                state = State::OPEN;
+                opened_at = now;
+                consecutive_failures = 1;
+                if (transition_to != nullptr) {
+                    *transition_to = state;
+                }
+                return;
+            }
+
+            ++consecutive_failures;
+            if (state == State::CLOSED &&
+                consecutive_failures >= failure_threshold) {
+                state = State::OPEN;
+                opened_at = now;
+                if (transition_to != nullptr) {
+                    *transition_to = state;
+                }
+            }
+        }
+
+        static const char* stateString(State state)
+        {
+            switch (state) {
+            case State::CLOSED:
+                return "CLOSED";
+            case State::OPEN:
+                return "OPEN";
+            case State::HALF_OPEN:
+                return "HALF_OPEN";
+            default:
+                return "UNKNOWN";
+            }
+        }
+    };
+
     struct InstanceColorEvaluation {
         abu_yolo_ros::TeamColorResult result{
             false,
@@ -486,6 +701,138 @@ private:
         bool used_fallback = false;
     };
 
+    rclcpp::QoS makePerceptionQoS() const
+    {
+        rclcpp::QoS qos{rclcpp::KeepLast(runtime_qos_depth_)};
+        if (use_sensor_data_qos_) {
+            qos.best_effort();
+            qos.durability_volatile();
+        }
+        return qos;
+    }
+
+    int throttleMs(double seconds) const
+    {
+        return std::max(
+            1,
+            static_cast<int>(std::round(seconds * 1000.0)));
+    }
+
+    bool beginInferenceGuard()
+    {
+        const auto now = std::chrono::steady_clock::now();
+        {
+            std::lock_guard<std::mutex> lock(circuit_breaker_mutex_);
+            const auto previous_state = circuit_breaker_.state;
+            auto transition_state = previous_state;
+            if (!circuit_breaker_.allowInference(now, &transition_state)) {
+                RCLCPP_WARN_THROTTLE(
+                    this->get_logger(),
+                    *this->get_clock(),
+                    throttleMs(circuit_breaker_log_throttle_sec_),
+                    "Circuit breaker OPEN; skipping frame publish and inference");
+                return false;
+            }
+
+            if (transition_state != previous_state) {
+                logCircuitBreakerTransition(previous_state, transition_state);
+            }
+        }
+        return true;
+    }
+
+    bool acquireInferenceLock(std::unique_lock<std::mutex>& lock)
+    {
+        if (!protect_inference_with_mutex_) {
+            return true;
+        }
+
+        lock = std::unique_lock<std::mutex>(inference_mutex_, std::defer_lock);
+        if (drop_frame_when_busy_) {
+            if (!lock.try_lock()) {
+                RCLCPP_WARN_THROTTLE(
+                    this->get_logger(),
+                    *this->get_clock(),
+                    throttleMs(busy_log_throttle_sec_),
+                    "Inference busy; dropping frame");
+                return false;
+            }
+            return true;
+        }
+
+        lock.lock();
+        return true;
+    }
+
+    void logCircuitBreakerTransition(
+        CircuitBreaker::State from,
+        CircuitBreaker::State to) const
+    {
+        if (from == to) {
+            return;
+        }
+        RCLCPP_WARN(
+            this->get_logger(),
+            "Circuit breaker %s -> %s",
+            CircuitBreaker::stateString(from),
+            CircuitBreaker::stateString(to));
+    }
+
+    void recordInferenceSuccess()
+    {
+        if (!circuit_breaker_.enabled) {
+            return;
+        }
+
+        std::lock_guard<std::mutex> lock(circuit_breaker_mutex_);
+        const auto previous_state = circuit_breaker_.state;
+        CircuitBreaker::State transition_state = previous_state;
+        circuit_breaker_.recordSuccess(&transition_state);
+        if (transition_state != previous_state) {
+            logCircuitBreakerTransition(previous_state, transition_state);
+        }
+    }
+
+    void recordInferenceFailure(
+        double latency_ms,
+        const std::string& reason)
+    {
+        const auto now = std::chrono::steady_clock::now();
+        if (latency_ms >= 0.0) {
+            RCLCPP_WARN(
+                this->get_logger(),
+                "Inference timeout/failure latency=%.2f ms reason=%s",
+                latency_ms,
+                reason.c_str());
+        } else {
+            RCLCPP_WARN(
+                this->get_logger(),
+                "Inference failure reason=%s",
+                reason.c_str());
+        }
+
+        if (!circuit_breaker_.enabled) {
+            return;
+        }
+
+        std::lock_guard<std::mutex> lock(circuit_breaker_mutex_);
+        const auto previous_state = circuit_breaker_.state;
+        CircuitBreaker::State transition_state = previous_state;
+        circuit_breaker_.recordFailure(now, &transition_state);
+        if (transition_state != previous_state) {
+            logCircuitBreakerTransition(previous_state, transition_state);
+        }
+    }
+
+    void logSkipPublishForFailedInferenceFrame() const
+    {
+        RCLCPP_WARN_THROTTLE(
+            this->get_logger(),
+            *this->get_clock(),
+            throttleMs(circuit_breaker_log_throttle_sec_),
+            "Skipping publish for failed inference frame");
+    }
+
     void imageCallback(
         const sensor_msgs::msg::Image::SharedPtr msg) {
 
@@ -496,6 +843,10 @@ private:
             int period = skip_frames_ + 1;
             if ((frame_count_ % period) != 1)
                 return;
+        }
+
+        if (!beginInferenceGuard()) {
+            return;
         }
 
         try {
@@ -521,8 +872,30 @@ private:
             auto t1 = std::chrono::steady_clock::now();
 
             // Inference
-            auto detections =
-                detector_->infer(bgr);
+            std::vector<abu_yolo_ros::Detection> detections;
+            {
+                std::unique_lock<std::mutex> inference_lock;
+                if (!acquireInferenceLock(inference_lock)) {
+                    return;
+                }
+                detections =
+                    detector_->infer(bgr);
+            }
+
+            auto t2 = std::chrono::steady_clock::now();
+            const double infer_ms =
+                std::chrono::duration<double, std::milli>(
+                    t2 - t1).count();
+            if (inference_timeout_ms_ > 0.0 &&
+                infer_ms > inference_timeout_ms_) {
+                std::ostringstream reason;
+                reason << "inference timeout threshold exceeded state="
+                       << currentCircuitBreakerStateString();
+                recordInferenceFailure(infer_ms, reason.str());
+                logSkipPublishForFailedInferenceFrame();
+                return;
+            }
+            recordInferenceSuccess();
 
             const auto team_color_results =
                 evaluateTeamColorResults(bgr, detections);
@@ -556,20 +929,6 @@ private:
                 msg->header,
                 kfs_instances,
                 kfs_instance_colors);
-
-            auto t2 = std::chrono::steady_clock::now();
-            
-            // auto duration =
-            //     std::chrono::duration_cast<
-            //         std::chrono::milliseconds
-            //     >(t2 - t1).count();
-            
-            // 
-            // RCLCPP_INFO(
-            //     this->get_logger(),
-            //     "Inference time: %ld ms",
-            //     duration
-            // );
 
             // Visualization
             cv::Mat output;
@@ -637,12 +996,19 @@ private:
 
         }
         catch (const std::exception& e) {
-
+            recordInferenceFailure(-1.0, e.what());
+            logSkipPublishForFailedInferenceFrame();
             RCLCPP_ERROR(
                 this->get_logger(),
                 "Inference error: %s",
                 e.what());
         }
+    }
+
+    std::string currentCircuitBreakerStateString() const
+    {
+        std::lock_guard<std::mutex> lock(circuit_breaker_mutex_);
+        return CircuitBreaker::stateString(circuit_breaker_.state);
     }
 
     void publishDetections(
@@ -1537,14 +1903,24 @@ private:
     bool kfs_publish_debug_image_;
 
     int skip_frames_;
+    int runtime_qos_depth_ = 1;
     uint64_t frame_count_;
+    double busy_log_throttle_sec_ = 1.0;
+    double inference_timeout_ms_ = 100.0;
+    double circuit_breaker_log_throttle_sec_ = 1.0;
     std::string team_color_string_;
     std::string kfs_instances_topic_;
     std::string kfs_debug_image_topic_;
+    bool use_sensor_data_qos_ = true;
+    bool protect_inference_with_mutex_ = true;
+    bool drop_frame_when_busy_ = true;
     abu_yolo_ros::TeamColor my_team_;
     abu_yolo_ros::TeamColorFilterConfig tcf_config_;
     abu_yolo_ros::DecisionEngineConfig decision_config_;
     abu_yolo_ros::KFSInstanceAggregatorConfig aggregator_config_;
+    mutable std::mutex inference_mutex_;
+    mutable std::mutex circuit_breaker_mutex_;
+    CircuitBreaker circuit_breaker_;
 };
 
 int main(int argc, char** argv) {

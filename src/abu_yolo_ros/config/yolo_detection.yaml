@@ -64,6 +64,26 @@ yolo_detection_node:
     # low-confidence detections become UNKNOWN instead of ILLEGAL.
     unknown_on_low_confidence: true
 
+    # Runtime safety hardening for realtime perception.
+    # Sensor-style QoS keeps latency low by prioritizing the newest frame.
+    runtime_safety.qos.use_sensor_data_qos: true
+    runtime_safety.qos.queue_depth: 1
+
+    # Protect inference-critical shared state. When busy, drop the incoming frame
+    # instead of building backlog and increasing end-to-end latency.
+    runtime_safety.threading.protect_inference_with_mutex: true
+    runtime_safety.threading.drop_frame_when_busy: true
+    runtime_safety.threading.busy_log_throttle_sec: 1.0
+
+    # Circuit breaker for repeated inference failures/timeouts.
+    # OPEN skips publish for that frame instead of publishing empty outputs.
+    runtime_safety.circuit_breaker.enabled: true
+    runtime_safety.circuit_breaker.failure_threshold: 5
+    runtime_safety.circuit_breaker.success_threshold: 3
+    runtime_safety.circuit_breaker.reset_timeout_sec: 2.0
+    runtime_safety.circuit_breaker.inference_timeout_ms: 100.0
+    runtime_safety.circuit_breaker.log_throttle_sec: 1.0
+
     # KFSInstanceAggregator
     # Internal-only KFS-level aggregation over YOLO symbol detections.
     # Existing /yolo/detections and /yolo/image_annotated outputs remain unchanged.
