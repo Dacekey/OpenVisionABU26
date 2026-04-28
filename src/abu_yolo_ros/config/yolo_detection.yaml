@@ -84,6 +84,16 @@ yolo_detection_node:
     runtime_safety.circuit_breaker.inference_timeout_ms: 100.0
     runtime_safety.circuit_breaker.log_throttle_sec: 1.0
 
+    # ONNX Runtime baseline benchmark instrumentation for the current
+    # yolo_detection_node runtime. This is measurement only and does not
+    # change inference outputs, message contracts, or ROS topics.
+    runtime_benchmark.enabled: true
+    runtime_benchmark.summary_interval_frames: 100
+    runtime_benchmark.warmup_frames: 20
+    runtime_benchmark.log_per_frame: false
+    runtime_benchmark.reset_after_summary: true
+    runtime_benchmark.include_publish_time: true
+
     # KFSInstanceAggregator
     # Internal-only KFS-level aggregation over YOLO symbol detections.
     # Existing /yolo/detections and /yolo/image_annotated outputs remain unchanged.

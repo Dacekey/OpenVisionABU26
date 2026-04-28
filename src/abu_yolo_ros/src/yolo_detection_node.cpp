@@ -1,6 +1,9 @@
+#include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <iomanip>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <sstream>
@@ -72,6 +75,24 @@ public:
         this->declare_parameter<double>(
             "runtime_safety.circuit_breaker.log_throttle_sec",
             1.0);
+        this->declare_parameter<bool>(
+            "runtime_benchmark.enabled",
+            true);
+        this->declare_parameter<int>(
+            "runtime_benchmark.summary_interval_frames",
+            100);
+        this->declare_parameter<int>(
+            "runtime_benchmark.warmup_frames",
+            20);
+        this->declare_parameter<bool>(
+            "runtime_benchmark.log_per_frame",
+            false);
+        this->declare_parameter<bool>(
+            "runtime_benchmark.reset_after_summary",
+            true);
+        this->declare_parameter<bool>(
+            "runtime_benchmark.include_publish_time",
+            true);
 
         // TeamColorFilter parameters
         this->declare_parameter<int>("red_h_low_1", 0);
@@ -289,6 +310,24 @@ public:
         this->get_parameter(
             "runtime_safety.circuit_breaker.log_throttle_sec",
             circuit_breaker_log_throttle_sec_);
+        this->get_parameter(
+            "runtime_benchmark.enabled",
+            runtime_benchmark_config_.enabled);
+        this->get_parameter(
+            "runtime_benchmark.summary_interval_frames",
+            runtime_benchmark_config_.summary_interval_frames);
+        this->get_parameter(
+            "runtime_benchmark.warmup_frames",
+            runtime_benchmark_config_.warmup_frames);
+        this->get_parameter(
+            "runtime_benchmark.log_per_frame",
+            runtime_benchmark_config_.log_per_frame);
+        this->get_parameter(
+            "runtime_benchmark.reset_after_summary",
+            runtime_benchmark_config_.reset_after_summary);
+        this->get_parameter(
+            "runtime_benchmark.include_publish_time",
+            runtime_benchmark_config_.include_publish_time);
         this->get_parameter("kfs_instance_aggregation.enabled", aggregator_config_.enable_aggregation);
         this->get_parameter("kfs_instance_aggregation.debug_instances", aggregator_config_.debug_instances);
         this->get_parameter("kfs_instance_aggregation.publish_instances", kfs_publish_instances_);
@@ -420,6 +459,14 @@ public:
         if (circuit_breaker_log_throttle_sec_ < 0.0) {
             circuit_breaker_log_throttle_sec_ = 1.0;
         }
+        if (runtime_benchmark_config_.summary_interval_frames < 1) {
+            runtime_benchmark_config_.summary_interval_frames = 100;
+        }
+        if (runtime_benchmark_config_.warmup_frames < 0) {
+            runtime_benchmark_config_.warmup_frames = 0;
+        }
+
+        reserveBenchmarkStorage();
 
         my_team_ =
             abu_yolo_ros::parseTeamColor(team_color_string_);
@@ -527,6 +574,15 @@ public:
             circuit_breaker_.success_threshold,
             circuit_breaker_.reset_timeout_sec,
             inference_timeout_ms_);
+        RCLCPP_INFO(
+            this->get_logger(),
+            "Runtime benchmark: %s summary_interval_frames=%d warmup_frames=%d log_per_frame=%s reset_after_summary=%s include_publish_time=%s",
+            runtime_benchmark_config_.enabled ? "enabled" : "disabled",
+            runtime_benchmark_config_.summary_interval_frames,
+            runtime_benchmark_config_.warmup_frames,
+            runtime_benchmark_config_.log_per_frame ? "true" : "false",
+            runtime_benchmark_config_.reset_after_summary ? "true" : "false",
+            runtime_benchmark_config_.include_publish_time ? "true" : "false");
 
         detector_ = std::make_unique<abu_yolo_ros::YOLODetector>(
             model_path_,
@@ -574,6 +630,62 @@ public:
     }
 
 private:
+
+    enum BenchmarkStageIndex : std::size_t {
+        kImageCallbackTotalStage = 0,
+        kPreprocessStage,
+        kInferenceStage,
+        kPostprocessStage,
+        kTeamColorFilterStage,
+        kKfsInstanceAggregationStage,
+        kPublishStage,
+        kTotalStage,
+        kBenchmarkStageCount
+    };
+
+    struct BenchmarkStageStats {
+        std::vector<double> samples;
+    };
+
+    struct BenchmarkStageSummary {
+        bool has_samples = false;
+        double mean_ms = 0.0;
+        double min_ms = 0.0;
+        double max_ms = 0.0;
+        double p50_ms = 0.0;
+        double p95_ms = 0.0;
+        double p99_ms = 0.0;
+        std::size_t sample_count = 0;
+    };
+
+    struct RuntimeBenchmarkConfig {
+        bool enabled = true;
+        int summary_interval_frames = 100;
+        int warmup_frames = 20;
+        bool log_per_frame = false;
+        bool reset_after_summary = true;
+        bool include_publish_time = true;
+    };
+
+    struct RuntimeBenchmarkFrame {
+        bool measure = false;
+        std::array<double, kBenchmarkStageCount> stage_ms{};
+        std::array<bool, kBenchmarkStageCount> has_stage{};
+        std::size_t detection_count = 0;
+        std::size_t kfs_instance_count = 0;
+    };
+
+    struct RuntimeBenchmarkSnapshot {
+        std::array<BenchmarkStageSummary, kBenchmarkStageCount> stages{};
+        uint64_t frames_seen = 0;
+        uint64_t frames_measured = 0;
+        uint64_t warmup_frames_skipped = 0;
+        uint64_t inference_failures = 0;
+        uint64_t timeout_count = 0;
+        uint64_t busy_drop_count = 0;
+        uint64_t circuit_open_skip_count = 0;
+        uint64_t window_frames = 0;
+    };
 
     struct CircuitBreaker {
         enum class State {
@@ -718,6 +830,246 @@ private:
             static_cast<int>(std::round(seconds * 1000.0)));
     }
 
+    void reserveBenchmarkStorage()
+    {
+        const std::size_t reserve_size = static_cast<std::size_t>(
+            std::max(1, runtime_benchmark_config_.summary_interval_frames));
+        for (auto& stage_stats : benchmark_stage_stats_) {
+            stage_stats.samples.reserve(reserve_size);
+        }
+    }
+
+    bool benchmarkShouldMeasureFrame()
+    {
+        if (!runtime_benchmark_config_.enabled) {
+            return false;
+        }
+
+        std::lock_guard<std::mutex> lock(benchmark_mutex_);
+        ++benchmark_frames_seen_;
+        if (benchmark_frames_seen_ <=
+            static_cast<uint64_t>(runtime_benchmark_config_.warmup_frames)) {
+            ++benchmark_warmup_frames_skipped_;
+            return false;
+        }
+        return true;
+    }
+
+    void benchmarkRecordBusyDrop()
+    {
+        if (!runtime_benchmark_config_.enabled) {
+            return;
+        }
+        std::lock_guard<std::mutex> lock(benchmark_mutex_);
+        ++benchmark_busy_drop_count_;
+    }
+
+    void benchmarkRecordCircuitOpenSkip()
+    {
+        if (!runtime_benchmark_config_.enabled) {
+            return;
+        }
+        std::lock_guard<std::mutex> lock(benchmark_mutex_);
+        ++benchmark_circuit_open_skip_count_;
+    }
+
+    void benchmarkRecordInferenceFailure(bool timeout)
+    {
+        if (!runtime_benchmark_config_.enabled) {
+            return;
+        }
+        std::lock_guard<std::mutex> lock(benchmark_mutex_);
+        ++benchmark_inference_failures_;
+        if (timeout) {
+            ++benchmark_timeout_count_;
+        }
+    }
+
+    static double benchmarkPercentile(
+        const std::vector<double>& sorted_samples,
+        double percentile)
+    {
+        if (sorted_samples.empty()) {
+            return 0.0;
+        }
+
+        const double rank =
+            percentile * static_cast<double>(sorted_samples.size() - 1);
+        const std::size_t index = static_cast<std::size_t>(std::ceil(rank));
+        return sorted_samples[std::min(index, sorted_samples.size() - 1)];
+    }
+
+    static BenchmarkStageSummary computeBenchmarkStageSummary(
+        const BenchmarkStageStats& stats)
+    {
+        BenchmarkStageSummary summary;
+        if (stats.samples.empty()) {
+            return summary;
+        }
+
+        summary.has_samples = true;
+        summary.sample_count = stats.samples.size();
+        double sum = 0.0;
+        summary.min_ms = std::numeric_limits<double>::max();
+        summary.max_ms = std::numeric_limits<double>::lowest();
+        for (const double sample : stats.samples) {
+            sum += sample;
+            summary.min_ms = std::min(summary.min_ms, sample);
+            summary.max_ms = std::max(summary.max_ms, sample);
+        }
+        summary.mean_ms = sum / static_cast<double>(stats.samples.size());
+
+        auto sorted_samples = stats.samples;
+        std::sort(sorted_samples.begin(), sorted_samples.end());
+        summary.p50_ms = benchmarkPercentile(sorted_samples, 0.50);
+        summary.p95_ms = benchmarkPercentile(sorted_samples, 0.95);
+        summary.p99_ms = benchmarkPercentile(sorted_samples, 0.99);
+        return summary;
+    }
+
+    std::string currentCircuitBreakerStateString() const
+    {
+        std::lock_guard<std::mutex> lock(circuit_breaker_mutex_);
+        return CircuitBreaker::stateString(circuit_breaker_.state);
+    }
+
+    void logBenchmarkSummary(const RuntimeBenchmarkSnapshot& snapshot) const
+    {
+        const auto& total_summary = snapshot.stages[kTotalStage];
+        const double estimated_fps =
+            total_summary.has_samples && total_summary.mean_ms > 1e-6
+                ? 1000.0 / total_summary.mean_ms
+                : 0.0;
+
+        std::ostringstream stream;
+        stream << std::fixed << std::setprecision(1);
+        stream << "ONNX benchmark frames=" << snapshot.window_frames
+               << " fps=" << estimated_fps;
+
+        if (total_summary.has_samples) {
+            stream << " total mean=" << total_summary.mean_ms
+                   << "ms p95=" << total_summary.p95_ms
+                   << "ms p99=" << total_summary.p99_ms << "ms";
+        } else {
+            stream << " total=n/a";
+        }
+
+        stream << " | preprocess mean="
+               << (snapshot.stages[kPreprocessStage].has_samples
+                       ? snapshot.stages[kPreprocessStage].mean_ms
+                       : 0.0)
+               << "ms";
+        stream << " | infer mean="
+               << (snapshot.stages[kInferenceStage].has_samples
+                       ? snapshot.stages[kInferenceStage].mean_ms
+                       : 0.0)
+               << "ms";
+        if (snapshot.stages[kInferenceStage].has_samples) {
+            stream << " p95=" << snapshot.stages[kInferenceStage].p95_ms << "ms";
+        }
+        stream << " | postprocess mean="
+               << (snapshot.stages[kPostprocessStage].has_samples
+                       ? snapshot.stages[kPostprocessStage].mean_ms
+                       : 0.0)
+               << "ms";
+        stream << " | color mean="
+               << (snapshot.stages[kTeamColorFilterStage].has_samples
+                       ? snapshot.stages[kTeamColorFilterStage].mean_ms
+                       : 0.0)
+               << "ms";
+        stream << " | kfs_agg mean="
+               << (snapshot.stages[kKfsInstanceAggregationStage].has_samples
+                       ? snapshot.stages[kKfsInstanceAggregationStage].mean_ms
+                       : 0.0)
+               << "ms";
+        stream << " | publish ";
+        if (snapshot.stages[kPublishStage].has_samples) {
+            stream << "mean=" << snapshot.stages[kPublishStage].mean_ms << "ms";
+        } else {
+            stream << "disabled";
+        }
+        stream << " | dropped=" << snapshot.busy_drop_count
+               << " timeout=" << snapshot.timeout_count
+               << " failures=" << snapshot.inference_failures
+               << " warmup_skipped=" << snapshot.warmup_frames_skipped
+               << " circuit=" << currentCircuitBreakerStateString();
+        RCLCPP_INFO(this->get_logger(), "%s", stream.str().c_str());
+    }
+
+    void logBenchmarkFrame(const RuntimeBenchmarkFrame& frame) const
+    {
+        std::ostringstream stream;
+        stream << std::fixed << std::setprecision(2);
+        stream << "ONNX benchmark frame total="
+               << frame.stage_ms[kTotalStage] << "ms"
+               << " preprocess=" << frame.stage_ms[kPreprocessStage] << "ms"
+               << " infer=" << frame.stage_ms[kInferenceStage] << "ms"
+               << " postprocess=" << frame.stage_ms[kPostprocessStage] << "ms"
+               << " color=" << frame.stage_ms[kTeamColorFilterStage] << "ms"
+               << " kfs_agg=" << frame.stage_ms[kKfsInstanceAggregationStage] << "ms";
+        if (frame.has_stage[kPublishStage]) {
+            stream << " publish=" << frame.stage_ms[kPublishStage] << "ms";
+        }
+        stream << " det=" << frame.detection_count
+               << " kfs=" << frame.kfs_instance_count
+               << " circuit=" << currentCircuitBreakerStateString();
+        RCLCPP_INFO(this->get_logger(), "%s", stream.str().c_str());
+    }
+
+    void benchmarkRecordSuccessfulFrame(const RuntimeBenchmarkFrame& frame)
+    {
+        if (!runtime_benchmark_config_.enabled || !frame.measure) {
+            return;
+        }
+
+        bool log_per_frame = false;
+        bool should_log_summary = false;
+        RuntimeBenchmarkSnapshot snapshot;
+        {
+            std::lock_guard<std::mutex> lock(benchmark_mutex_);
+            ++benchmark_frames_measured_;
+            ++benchmark_window_measured_frames_;
+            log_per_frame = runtime_benchmark_config_.log_per_frame;
+
+            for (std::size_t stage = 0; stage < kBenchmarkStageCount; ++stage) {
+                if (frame.has_stage[stage]) {
+                    benchmark_stage_stats_[stage].samples.push_back(
+                        frame.stage_ms[stage]);
+                }
+            }
+
+            if (benchmark_window_measured_frames_ >= static_cast<uint64_t>(
+                    runtime_benchmark_config_.summary_interval_frames)) {
+                snapshot.frames_seen = benchmark_frames_seen_;
+                snapshot.frames_measured = benchmark_frames_measured_;
+                snapshot.warmup_frames_skipped = benchmark_warmup_frames_skipped_;
+                snapshot.inference_failures = benchmark_inference_failures_;
+                snapshot.timeout_count = benchmark_timeout_count_;
+                snapshot.busy_drop_count = benchmark_busy_drop_count_;
+                snapshot.circuit_open_skip_count = benchmark_circuit_open_skip_count_;
+                snapshot.window_frames = benchmark_window_measured_frames_;
+                for (std::size_t stage = 0; stage < kBenchmarkStageCount; ++stage) {
+                    snapshot.stages[stage] =
+                        computeBenchmarkStageSummary(benchmark_stage_stats_[stage]);
+                }
+                should_log_summary = true;
+                benchmark_window_measured_frames_ = 0;
+                if (runtime_benchmark_config_.reset_after_summary) {
+                    for (auto& stage_stats : benchmark_stage_stats_) {
+                        stage_stats.samples.clear();
+                    }
+                }
+            }
+        }
+
+        if (log_per_frame) {
+            logBenchmarkFrame(frame);
+        }
+        if (should_log_summary) {
+            logBenchmarkSummary(snapshot);
+        }
+    }
+
     bool beginInferenceGuard()
     {
         const auto now = std::chrono::steady_clock::now();
@@ -731,6 +1083,7 @@ private:
                     *this->get_clock(),
                     throttleMs(circuit_breaker_log_throttle_sec_),
                     "Circuit breaker OPEN; skipping frame publish and inference");
+                benchmarkRecordCircuitOpenSkip();
                 return false;
             }
 
@@ -755,6 +1108,7 @@ private:
                     *this->get_clock(),
                     throttleMs(busy_log_throttle_sec_),
                     "Inference busy; dropping frame");
+                benchmarkRecordBusyDrop();
                 return false;
             }
             return true;
@@ -836,6 +1190,8 @@ private:
     void imageCallback(
         const sensor_msgs::msg::Image::SharedPtr msg) {
 
+        const auto callback_started_at = std::chrono::steady_clock::now();
+
         frame_count_++;
 
         // Skip frame logic
@@ -845,12 +1201,15 @@ private:
                 return;
         }
 
+        RuntimeBenchmarkFrame benchmark_frame;
+        benchmark_frame.measure = benchmarkShouldMeasureFrame();
+
         if (!beginInferenceGuard()) {
             return;
         }
 
         try {
-            auto t0 = std::chrono::steady_clock::now();
+            const auto total_started_at = std::chrono::steady_clock::now();
 
             int width = msg->width;
             int height = msg->height;
@@ -869,7 +1228,8 @@ private:
                 bgr,
                 cv::COLOR_YUV2BGR_YUY2);
 
-            auto t1 = std::chrono::steady_clock::now();
+            const auto preprocess_finished_at =
+                std::chrono::steady_clock::now();
 
             // Inference
             std::vector<abu_yolo_ros::Detection> detections;
@@ -882,27 +1242,36 @@ private:
                     detector_->infer(bgr);
             }
 
-            auto t2 = std::chrono::steady_clock::now();
+            const auto inference_finished_at =
+                std::chrono::steady_clock::now();
             const double infer_ms =
                 std::chrono::duration<double, std::milli>(
-                    t2 - t1).count();
+                    inference_finished_at - preprocess_finished_at).count();
             if (inference_timeout_ms_ > 0.0 &&
                 infer_ms > inference_timeout_ms_) {
                 std::ostringstream reason;
                 reason << "inference timeout threshold exceeded state="
                        << currentCircuitBreakerStateString();
+                benchmarkRecordInferenceFailure(true);
                 recordInferenceFailure(infer_ms, reason.str());
                 logSkipPublishForFailedInferenceFrame();
                 return;
             }
             recordInferenceSuccess();
 
+            // detector_->infer() already returns parsed detections. The node-level
+            // postprocess stage therefore measures the remaining symbol-level work
+            // after inference, rather than raw tensor decode inside YOLODetector.
             const auto team_color_results =
                 evaluateTeamColorResults(bgr, detections);
+            const auto team_color_finished_at =
+                std::chrono::steady_clock::now();
             const auto decision_results =
                 evaluateDecisionResults(
                     detections,
                     team_color_results);
+            const auto postprocess_finished_at =
+                std::chrono::steady_clock::now();
             maybeLogTeamColorResults(
                 detections,
                 team_color_results);
@@ -912,6 +1281,8 @@ private:
                 detections,
                 team_color_results,
                 decision_results);
+            // KFS aggregation timing includes the aggregator plus the current
+            // instance-level color evaluation used by the KFS runtime output.
             const auto kfs_instances =
                 evaluateKFSInstances(
                     bgr,
@@ -920,10 +1291,15 @@ private:
                 evaluateKFSInstanceColors(
                     bgr,
                     kfs_instances);
+            const auto kfs_aggregation_finished_at =
+                std::chrono::steady_clock::now();
             maybeLogKFSInstances(
                 kfs_instances,
                 kfs_instance_colors);
-            
+
+            const auto publish_started_at =
+                std::chrono::steady_clock::now();
+
             publishDetections(detections);
             publishKFSInstances(
                 msg->header,
@@ -957,8 +1333,48 @@ private:
                 msg->header,
                 bgr,
                 kfs_instances);
+            const auto publish_finished_at =
+                std::chrono::steady_clock::now();
+            const auto callback_finished_at =
+                std::chrono::steady_clock::now();
 
-            auto t4 = std::chrono::steady_clock::now();
+            benchmark_frame.detection_count = detections.size();
+            benchmark_frame.kfs_instance_count = kfs_instances.size();
+            benchmark_frame.has_stage[kImageCallbackTotalStage] = true;
+            benchmark_frame.stage_ms[kImageCallbackTotalStage] =
+                std::chrono::duration<double, std::milli>(
+                    callback_finished_at - callback_started_at).count();
+            benchmark_frame.has_stage[kPreprocessStage] = true;
+            benchmark_frame.stage_ms[kPreprocessStage] =
+                std::chrono::duration<double, std::milli>(
+                    preprocess_finished_at - total_started_at).count();
+            benchmark_frame.has_stage[kInferenceStage] = true;
+            benchmark_frame.stage_ms[kInferenceStage] =
+                std::chrono::duration<double, std::milli>(
+                    inference_finished_at - preprocess_finished_at).count();
+            benchmark_frame.has_stage[kTeamColorFilterStage] = true;
+            benchmark_frame.stage_ms[kTeamColorFilterStage] =
+                std::chrono::duration<double, std::milli>(
+                    team_color_finished_at - inference_finished_at).count();
+            benchmark_frame.has_stage[kPostprocessStage] = true;
+            benchmark_frame.stage_ms[kPostprocessStage] =
+                std::chrono::duration<double, std::milli>(
+                    postprocess_finished_at - team_color_finished_at).count();
+            benchmark_frame.has_stage[kKfsInstanceAggregationStage] = true;
+            benchmark_frame.stage_ms[kKfsInstanceAggregationStage] =
+                std::chrono::duration<double, std::milli>(
+                    kfs_aggregation_finished_at - postprocess_finished_at).count();
+            if (runtime_benchmark_config_.include_publish_time) {
+                benchmark_frame.has_stage[kPublishStage] = true;
+                benchmark_frame.stage_ms[kPublishStage] =
+                    std::chrono::duration<double, std::milli>(
+                        publish_finished_at - publish_started_at).count();
+            }
+            benchmark_frame.has_stage[kTotalStage] = true;
+            benchmark_frame.stage_ms[kTotalStage] =
+                std::chrono::duration<double, std::milli>(
+                    publish_finished_at - total_started_at).count();
+            benchmarkRecordSuccessfulFrame(benchmark_frame);
 
             // Timing log (THROTTLED)
             if (log_timing_) {
@@ -969,7 +1385,7 @@ private:
 
                 double infer_ms =
                     std::chrono::duration<double, std::milli>(
-                        t2 - t1).count();
+                        inference_finished_at - preprocess_finished_at).count();
 
                 // double draw_ms =
                 //     std::chrono::duration<double, std::milli>(
@@ -981,7 +1397,7 @@ private:
 
                 double total_ms =
                     std::chrono::duration<double, std::milli>(
-                        t4 - t0).count();
+                        publish_finished_at - total_started_at).count();
 
                 RCLCPP_INFO_THROTTLE(
                     this->get_logger(),
@@ -996,6 +1412,7 @@ private:
 
         }
         catch (const std::exception& e) {
+            benchmarkRecordInferenceFailure(false);
             recordInferenceFailure(-1.0, e.what());
             logSkipPublishForFailedInferenceFrame();
             RCLCPP_ERROR(
@@ -1003,12 +1420,6 @@ private:
                 "Inference error: %s",
                 e.what());
         }
-    }
-
-    std::string currentCircuitBreakerStateString() const
-    {
-        std::lock_guard<std::mutex> lock(circuit_breaker_mutex_);
-        return CircuitBreaker::stateString(circuit_breaker_.state);
     }
 
     void publishDetections(
@@ -1918,8 +2329,19 @@ private:
     abu_yolo_ros::TeamColorFilterConfig tcf_config_;
     abu_yolo_ros::DecisionEngineConfig decision_config_;
     abu_yolo_ros::KFSInstanceAggregatorConfig aggregator_config_;
+    RuntimeBenchmarkConfig runtime_benchmark_config_;
+    std::array<BenchmarkStageStats, kBenchmarkStageCount> benchmark_stage_stats_{};
     mutable std::mutex inference_mutex_;
     mutable std::mutex circuit_breaker_mutex_;
+    mutable std::mutex benchmark_mutex_;
+    uint64_t benchmark_frames_seen_ = 0;
+    uint64_t benchmark_frames_measured_ = 0;
+    uint64_t benchmark_warmup_frames_skipped_ = 0;
+    uint64_t benchmark_window_measured_frames_ = 0;
+    uint64_t benchmark_inference_failures_ = 0;
+    uint64_t benchmark_timeout_count_ = 0;
+    uint64_t benchmark_busy_drop_count_ = 0;
+    uint64_t benchmark_circuit_open_skip_count_ = 0;
     CircuitBreaker circuit_breaker_;
 };
 

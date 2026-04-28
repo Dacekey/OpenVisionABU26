@@ -291,6 +291,67 @@ The stabilizer uses a small constant-velocity Kalman filter with conservative ga
 
 The OpenVision-v3 perception runtime now also uses sensor-style QoS on its realtime vision streams and adds local runtime hardening inside `yolo_detection_node`: an inference mutex with optional busy-frame drop, plus a lightweight circuit breaker for repeated inference failures/timeouts. When that circuit breaker is OPEN, the node skips inference and skips publishing fresh perception outputs for that frame rather than publishing empty arrays. No separate health/status topic is emitted yet.
 
+The same `yolo_detection_node` now also includes ONNX Runtime baseline benchmark instrumentation for the current OpenVision-v3 pipeline. This is measurement-only instrumentation around the existing C++ runtime and is intended to establish a stable ONNX Runtime latency/FPS baseline before any later TensorRT backend conversion. It does not change inference outputs, TeamColorFilter logic, DecisionEngine logic, KFS aggregation, 3D localization, localization stabilization, message contracts, or topic names.
+
+### ONNX Runtime Baseline Benchmark
+
+Benchmark configuration lives under `runtime_benchmark.*` in `src/abu_yolo_ros/config/yolo_detection.yaml`:
+
+```yaml
+runtime_benchmark.enabled: true
+runtime_benchmark.summary_interval_frames: 100
+runtime_benchmark.warmup_frames: 20
+runtime_benchmark.log_per_frame: false
+runtime_benchmark.reset_after_summary: true
+runtime_benchmark.include_publish_time: true
+```
+
+The current baseline benchmark measures these node-local stages inside `yolo_detection_node`:
+
+- `image_callback_total_ms`
+- `preprocess_ms`
+- `inference_ms`
+- `postprocess_ms`
+- `team_color_filter_ms`
+- `kfs_instance_aggregation_ms`
+- `publish_ms`
+- `total_ms`
+
+For each measured stage, the benchmark computes:
+
+- `mean_ms`
+- `min_ms`
+- `max_ms`
+- `p50_ms`
+- `p95_ms`
+- `p99_ms`
+- `sample_count`
+
+It also reports:
+
+- estimated FPS from `total_ms`
+- warmup-skipped frame count
+- busy-drop count from runtime safety
+- inference failure count
+- inference timeout count
+- current circuit breaker state
+
+The benchmark is intentionally lightweight:
+
+- it uses `std::chrono` timing only
+- it does not add new ROS topics
+- it does not alter inference behavior or model outputs
+- it does not implement TensorRT in this step
+- it does not implement NVMM or zero-copy in this step
+
+Expected summary logs look like:
+
+```text
+ONNX benchmark frames=100 fps=29.4 total mean=31.8ms p95=42.1ms p99=55.0ms | preprocess mean=2.1ms | infer mean=18.4ms p95=25.6ms | postprocess mean=1.8ms | color mean=1.2ms | kfs_agg mean=2.4ms | publish mean=0.6ms | dropped=0 timeout=0 failures=0 warmup_skipped=20 circuit=CLOSED
+```
+
+This benchmark is the baseline reference for future backend comparison. TensorRT benchmarking should be added only after a real backend conversion exists. NVMM / zero-copy optimization should only be considered later if the benchmark shows that camera conversion or copy overhead is a real bottleneck.
+
 `/yolo/kfs_instances/image_annotated` remains a debug-only visualization topic for final KFS instance aggregation boxes. It can also draw the aggregation ROI overlay, and that ROI should match the actual filtering region used by the runtime aggregator. It does not change the existing `/yolo/detections` or `/yolo/image_annotated` outputs.
 
 To inspect it at runtime:
