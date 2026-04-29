@@ -32,7 +32,7 @@ Current implemented baseline:
 
 ### 3.1 Camera Calibration and Camera Model
 
-- Perform real camera calibration for the IMX219-160.
+- Perform real camera calibration for the IMX219-160. (Calibration Tool just ouput intrinsics, not including extrinsic)
 - Capture calibration images for the actual runtime mode.
 - Decide and validate `fisheye` vs `pinhole` model for the deployed camera.
 - Update `fx`, `fy`, `cx`, `cy`.
