@@ -187,7 +187,7 @@ yolo_detection_node:
     kfs_instance_aggregation.low_mask_max_merged_height_scale: 2.6
 
     # Safety: remove AMBIGUOUS clusters from final runtime KFS instances.
-    kfs_instance_aggregation.drop_ambiguous_clusters: true
+    kfs_instance_aggregation.drop_ambiguous_clusters: false
 
     # HSV profile and thresholds for body-mask refinement.
     kfs_instance_aggregation.hsv_profile: competition_blue
@@ -201,6 +201,7 @@ yolo_detection_node:
     kfs_instance_aggregation.blue_h_high: 140
     kfs_instance_aggregation.blue_s_low: 40
     kfs_instance_aggregation.blue_v_low: 80
+    # Dark blue for debug mode only.
     kfs_instance_aggregation.dark_blue_h_low: 90
     kfs_instance_aggregation.dark_blue_h_high: 140
     kfs_instance_aggregation.dark_blue_s_low: 20

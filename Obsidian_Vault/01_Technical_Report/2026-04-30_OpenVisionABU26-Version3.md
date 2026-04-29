@@ -46,12 +46,12 @@ Camera / Image Stream
    - gating
 -> /yolo/kfs_instances_stabilized
 ```
-#### **Mermaid diagram**:
-![OpenVision-v3 Pipeline](../05_Diagram_Images/pipeline-mermaid.png)
+
+![OpenVision-v3 ROS graph](../05_Diagram_Images/)
 
 ## 3. ROS Graph Snapshot
 
-![OpenVision-v3 ROS graph](../05_Diagram_Images/rqt_graph_2.png)
+![OpenVision-v3 ROS graph](../05_Node_Images/rqt_graph_2.png)
 
 This image was captured from `rqt_graph`. It visualizes the current ROS 2 topic and node flow and is useful for confirming the active perception graph structure.
 
